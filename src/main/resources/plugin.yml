@@ -1,6 +1,6 @@
 name: Niveaux
 version: 1.0.0
-main: fr.ravguillaume.niveaux.NiveauxPlugin
+main: enferplugins.niveaux.NiveauxPlugin
 api-version: 1.20
 description: Système de progression basé sur le temps de jeu
 author: Saguime
