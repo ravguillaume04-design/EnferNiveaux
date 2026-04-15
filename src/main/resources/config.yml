@@ -1,0 +1,22 @@
+# ======================================
+# Configuration du plugin Niveaux
+# ======================================
+
+# Connexion à la base de données MySQL
+database:
+  host: localhost
+  port: 3306
+  name: minecraft
+  username: root
+  password: password
+
+# Liste des mondes où le temps de jeu est comptabilisé pour les niveaux.
+# Les joueurs dans un monde non listé ne progresseront pas.
+mondes-autorises:
+  - world
+  - world_nether
+  - world_the_end
+
+# Intervalle de sauvegarde automatique (en minutes).
+# Minimum : 1 minute. Recommandé : 5 minutes.
+auto-save-interval: 5
