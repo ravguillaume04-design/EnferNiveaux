@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.commands;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.events.PlayerLevelChangeEvent;
 import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -24,7 +25,7 @@ import java.util.function.Consumer;
  */
 public class NiveauCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> ACTIONS = Arrays.asList(
+    private static final List<String> ACTIONS = List.of(
             "add", "remove", "set", "reset"
     );
 
@@ -70,6 +71,10 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[1], data -> {
             int old = data.getLevel();
             data.reset();
+            Bukkit.getPluginManager().callEvent(
+                new PlayerLevelChangeEvent(data.getUuid(), data.getName(), old, 0,
+                    PlayerLevelChangeEvent.Reason.ADMIN_RESET)
+            );
             sender.sendMessage(ColorUtil.colorize(
                 "&#55FF55Le niveau de &#FFFFFF" + data.getName() + " &#55FF55a été réinitialisé. " +
                 "&#606060(ancien niveau : &#FFB300" + old + "&#606060)"
@@ -86,6 +91,10 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.addLevel(amount);
+            Bukkit.getPluginManager().callEvent(
+                new PlayerLevelChangeEvent(data.getUuid(), data.getName(), old, data.getLevel(),
+                    PlayerLevelChangeEvent.Reason.ADMIN_ADD)
+            );
             sender.sendMessage(ColorUtil.colorize(
                 "&#55FF55+" + amount + " niveau(x) ajouté(s) à &#FFFFFF" + data.getName() +
                 "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
@@ -102,6 +111,10 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.removeLevel(amount);
+            Bukkit.getPluginManager().callEvent(
+                new PlayerLevelChangeEvent(data.getUuid(), data.getName(), old, data.getLevel(),
+                    PlayerLevelChangeEvent.Reason.ADMIN_REMOVE)
+            );
             sender.sendMessage(ColorUtil.colorize(
                 "&#FF5555-" + amount + " niveau(x) retiré(s) à &#FFFFFF" + data.getName() +
                 "&#FF5555. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
@@ -118,6 +131,10 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.setLevel(level);
+            Bukkit.getPluginManager().callEvent(
+                new PlayerLevelChangeEvent(data.getUuid(), data.getName(), old, data.getLevel(),
+                    PlayerLevelChangeEvent.Reason.ADMIN_SET)
+            );
             sender.sendMessage(ColorUtil.colorize(
                 "&#55FF55Niveau de &#FFFFFF" + data.getName() + " &#55FF55défini à &#FFB300" + data.getLevel() +
                 "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() +

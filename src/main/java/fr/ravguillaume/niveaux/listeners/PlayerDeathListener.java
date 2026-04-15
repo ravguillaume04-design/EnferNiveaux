@@ -2,6 +2,8 @@ package fr.ravguillaume.niveaux.listeners;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.events.PlayerLevelChangeEvent;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -23,6 +25,15 @@ public class PlayerDeathListener implements Listener {
         PlayerData data = plugin.getPlayerCache().get(event.getEntity().getUniqueId());
         if (data == null) return;
 
+        int oldLevel = data.getLevel();
         data.reset();
+        Bukkit.getPluginManager().callEvent(
+            new PlayerLevelChangeEvent(
+                event.getEntity().getUniqueId(),
+                event.getEntity().getName(),
+                oldLevel, 0,
+                PlayerLevelChangeEvent.Reason.DEATH_RESET
+            )
+        );
     }
 }

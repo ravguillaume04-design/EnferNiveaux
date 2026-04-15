@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.scheduler;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.events.PlayerLevelChangeEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -48,7 +49,18 @@ public class PlaytimeScheduler extends BukkitRunnable {
             PlayerData data = plugin.getPlayerCache().get(player.getUniqueId());
             if (data == null) continue;
 
-            data.addMinute();
+            boolean leveledUp = data.addMinute();
+            if (leveledUp) {
+                final int newLevel = data.getLevel();
+                final String name  = data.getName();
+                final java.util.UUID uuid = player.getUniqueId();
+                Bukkit.getScheduler().runTask(plugin, () ->
+                    Bukkit.getPluginManager().callEvent(
+                        new PlayerLevelChangeEvent(uuid, name, newLevel - 1, newLevel,
+                            PlayerLevelChangeEvent.Reason.PLAYTIME)
+                    )
+                );
+            }
         }
 
         // Auto-save
