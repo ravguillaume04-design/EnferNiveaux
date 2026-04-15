@@ -8,7 +8,7 @@ author: Saguime
 commands:
   niveau:
     description: Gestion des niveaux des joueurs
-    usage: /niveau <add|remove|set|reset|get> [valeur] <pseudo>
+    usage: /niveau <add|remove|set|reset> [valeur] <pseudo>
     permission: niveaux.admin
     aliases:
       - n
