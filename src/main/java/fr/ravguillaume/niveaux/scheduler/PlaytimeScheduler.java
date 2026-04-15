@@ -2,7 +2,6 @@ package fr.ravguillaume.niveaux.scheduler;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
-import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -14,7 +13,6 @@ import java.util.List;
  *
  * Responsabilités :
  *  - Incrémenter le temps de jeu des joueurs dans un monde autorisé.
- *  - Notifier le joueur en cas de level-up.
  *  - Déclencher l'auto-save toutes les N minutes (configurable).
  */
 public class PlaytimeScheduler extends BukkitRunnable {
@@ -50,19 +48,7 @@ public class PlaytimeScheduler extends BukkitRunnable {
             PlayerData data = plugin.getPlayerCache().get(player.getUniqueId());
             if (data == null) continue;
 
-            boolean leveledUp = data.addMinute();
-
-            if (leveledUp) {
-                final int newLevel = data.getLevel();
-                // Retour sur le thread principal pour l'envoi du message
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (player.isOnline()) {
-                        player.sendMessage(ColorUtil.colorize(
-                            "&#55FF55&lFélicitations ! &#55FF55Vous avez atteint le &#FFB300&lniveau " + newLevel + "&#55FF55 !"
-                        ));
-                    }
-                });
-            }
+            data.addMinute();
         }
 
         // Auto-save

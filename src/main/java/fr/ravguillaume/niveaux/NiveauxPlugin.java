@@ -4,7 +4,6 @@ import fr.ravguillaume.niveaux.commands.NiveauCommand;
 import fr.ravguillaume.niveaux.config.ConfigManager;
 import fr.ravguillaume.niveaux.data.PlayerData;
 import fr.ravguillaume.niveaux.database.DatabaseManager;
-import fr.ravguillaume.niveaux.listeners.ChatListener;
 import fr.ravguillaume.niveaux.listeners.PlayerConnectionListener;
 import fr.ravguillaume.niveaux.listeners.PlayerDeathListener;
 import fr.ravguillaume.niveaux.scheduler.PlaytimeScheduler;
@@ -54,7 +53,6 @@ public class NiveauxPlugin extends JavaPlugin {
         // Listeners
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
         Bukkit.getPluginManager().registerEvents(new PlayerDeathListener(this), this);
-        Bukkit.getPluginManager().registerEvents(new ChatListener(this), this);
 
         // Commande
         NiveauCommand niveauCmd = new NiveauCommand(this);

@@ -74,7 +74,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
                 "&#55FF55Le niveau de &#FFFFFF" + data.getName() + " &#55FF55a été réinitialisé. " +
                 "&#606060(ancien niveau : &#FFB300" + old + "&#606060)"
             ));
-            notifyTarget(data.getName(), ColorUtil.colorize("&#FF5555Votre niveau a été réinitialisé par un administrateur."));
         });
     }
 
@@ -90,10 +89,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(ColorUtil.colorize(
                 "&#55FF55+" + amount + " niveau(x) ajouté(s) à &#FFFFFF" + data.getName() +
                 "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
-            ));
-            notifyTarget(data.getName(), ColorUtil.colorize(
-                "&#55FF55Un administrateur vous a ajouté &#FFB300" + amount +
-                " &#55FF55niveau(x). Vous êtes maintenant &#FFB300niveau " + data.getLevel() + "&#55FF55."
             ));
         });
     }
@@ -111,10 +106,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
                 "&#FF5555-" + amount + " niveau(x) retiré(s) à &#FFFFFF" + data.getName() +
                 "&#FF5555. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
             ));
-            notifyTarget(data.getName(), ColorUtil.colorize(
-                "&#FF5555Un administrateur vous a retiré &#FFB300" + amount +
-                " &#FF5555niveau(x). Vous êtes maintenant &#FFB300niveau " + data.getLevel() + "&#FF5555."
-            ));
         });
     }
 
@@ -131,9 +122,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
                 "&#55FF55Niveau de &#FFFFFF" + data.getName() + " &#55FF55défini à &#FFB300" + data.getLevel() +
                 "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() +
                 "&#606060, temps recalculé : &#FFFF55" + data.getMinutes() + " &#606060min)"
-            ));
-            notifyTarget(data.getName(), ColorUtil.colorize(
-                "&#55FF55Un administrateur a défini votre niveau à &#FFB300" + data.getLevel() + "&#55FF55."
             ));
         });
     }
@@ -178,14 +166,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------------
     // Utilitaires
     // -------------------------------------------------------------------------
-
-    /**
-     * Envoie un message au joueur cible s'il est en ligne.
-     */
-    private void notifyTarget(String name, String message) {
-        Player target = Bukkit.getPlayerExact(name);
-        if (target != null) target.sendMessage(message);
-    }
 
     /**
      * Parse un entier >= 0. Retourne -1 (et envoie un message d'erreur) si invalide.
