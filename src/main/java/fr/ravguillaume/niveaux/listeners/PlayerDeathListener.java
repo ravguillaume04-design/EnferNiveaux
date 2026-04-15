@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.listeners;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -27,10 +28,10 @@ public class PlayerDeathListener implements Listener {
         data.reset();
 
         if (levelBefore > 0) {
-            event.getEntity().sendMessage(
-                "§c§lVous avez perdu votre niveau ! " +
-                "§7(Niveau §6" + levelBefore + " §7→ §60§7)"
-            );
+            event.getEntity().sendMessage(ColorUtil.colorize(
+                "&#FF5555&lVous avez perdu votre niveau ! " +
+                "&#606060(Niveau &#FFB300" + levelBefore + " &#606060→ &#FFB3000&#606060)"
+            ));
         }
     }
 }

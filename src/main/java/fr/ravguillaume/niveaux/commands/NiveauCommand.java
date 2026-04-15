@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.commands;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -40,7 +41,7 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("niveaux.admin")) {
-            sender.sendMessage("§cVous n'avez pas la permission d'utiliser cette commande.");
+            sender.sendMessage(ColorUtil.colorize("&#FF5555Vous n'avez pas la permission d'utiliser cette commande."));
             return true;
         }
 
@@ -64,21 +65,21 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------------
 
     private void handleReset(CommandSender sender, String[] args) {
-        if (args.length < 2) { sender.sendMessage("§cUsage : /niveau reset <pseudo>"); return; }
+        if (args.length < 2) { sender.sendMessage(ColorUtil.colorize("&#FF5555Usage : &#FFB300/niveau reset &#FFFFFF<pseudo>")); return; }
 
         modifyData(sender, args[1], data -> {
             int old = data.getLevel();
             data.reset();
-            sender.sendMessage(
-                "§aLe niveau de §6" + data.getName() + " §aa été réinitialisé. " +
-                "§7(ancien niveau : §6" + old + "§7)"
-            );
-            notifyTarget(data.getName(), "§cVotre niveau a été réinitialisé par un administrateur.");
+            sender.sendMessage(ColorUtil.colorize(
+                "&#55FF55Le niveau de &#FFFFFF" + data.getName() + " &#55FF55a été réinitialisé. " +
+                "&#606060(ancien niveau : &#FFB300" + old + "&#606060)"
+            ));
+            notifyTarget(data.getName(), ColorUtil.colorize("&#FF5555Votre niveau a été réinitialisé par un administrateur."));
         });
     }
 
     private void handleAdd(CommandSender sender, String[] args) {
-        if (args.length < 3) { sender.sendMessage("§cUsage : /niveau add <valeur> <pseudo>"); return; }
+        if (args.length < 3) { sender.sendMessage(ColorUtil.colorize("&#FF5555Usage : &#FFB300/niveau add &#FFFFFF<valeur> <pseudo>")); return; }
 
         int amount = parseNonNegativeInt(sender, args[1]);
         if (amount < 0) return;
@@ -86,19 +87,19 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.addLevel(amount);
-            sender.sendMessage(
-                "§a+" + amount + " niveau(x) ajouté(s) à §6" + data.getName() +
-                "§a. §7(§6" + old + " §7→ §6" + data.getLevel() + "§7)"
-            );
-            notifyTarget(data.getName(),
-                "§aUn administrateur vous a ajouté §6" + amount +
-                " §aniveau(x). Vous êtes maintenant §6niveau " + data.getLevel() + "§a."
-            );
+            sender.sendMessage(ColorUtil.colorize(
+                "&#55FF55+" + amount + " niveau(x) ajouté(s) à &#FFFFFF" + data.getName() +
+                "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
+            ));
+            notifyTarget(data.getName(), ColorUtil.colorize(
+                "&#55FF55Un administrateur vous a ajouté &#FFB300" + amount +
+                " &#55FF55niveau(x). Vous êtes maintenant &#FFB300niveau " + data.getLevel() + "&#55FF55."
+            ));
         });
     }
 
     private void handleRemove(CommandSender sender, String[] args) {
-        if (args.length < 3) { sender.sendMessage("§cUsage : /niveau remove <valeur> <pseudo>"); return; }
+        if (args.length < 3) { sender.sendMessage(ColorUtil.colorize("&#FF5555Usage : &#FFB300/niveau remove &#FFFFFF<valeur> <pseudo>")); return; }
 
         int amount = parseNonNegativeInt(sender, args[1]);
         if (amount < 0) return;
@@ -106,19 +107,19 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.removeLevel(amount);
-            sender.sendMessage(
-                "§c-" + amount + " niveau(x) retiré(s) à §6" + data.getName() +
-                "§c. §7(§6" + old + " §7→ §6" + data.getLevel() + "§7)"
-            );
-            notifyTarget(data.getName(),
-                "§cUn administrateur vous a retiré §6" + amount +
-                " §cniveau(x). Vous êtes maintenant §6niveau " + data.getLevel() + "§c."
-            );
+            sender.sendMessage(ColorUtil.colorize(
+                "&#FF5555-" + amount + " niveau(x) retiré(s) à &#FFFFFF" + data.getName() +
+                "&#FF5555. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() + "&#606060)"
+            ));
+            notifyTarget(data.getName(), ColorUtil.colorize(
+                "&#FF5555Un administrateur vous a retiré &#FFB300" + amount +
+                " &#FF5555niveau(x). Vous êtes maintenant &#FFB300niveau " + data.getLevel() + "&#FF5555."
+            ));
         });
     }
 
     private void handleSet(CommandSender sender, String[] args) {
-        if (args.length < 3) { sender.sendMessage("§cUsage : /niveau set <valeur> <pseudo>"); return; }
+        if (args.length < 3) { sender.sendMessage(ColorUtil.colorize("&#FF5555Usage : &#FFB300/niveau set &#FFFFFF<valeur> <pseudo>")); return; }
 
         int level = parseNonNegativeInt(sender, args[1]);
         if (level < 0) return;
@@ -126,14 +127,14 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         modifyData(sender, args[2], data -> {
             int old = data.getLevel();
             data.setLevel(level);
-            sender.sendMessage(
-                "§aNiveau de §6" + data.getName() + " §adéfini à §6" + data.getLevel() +
-                "§a. §7(§6" + old + " §7→ §6" + data.getLevel() +
-                "§7, temps recalculé : §e" + data.getMinutes() + " §7min)"
-            );
-            notifyTarget(data.getName(),
-                "§aUn administrateur a défini votre niveau à §6" + data.getLevel() + "§a."
-            );
+            sender.sendMessage(ColorUtil.colorize(
+                "&#55FF55Niveau de &#FFFFFF" + data.getName() + " &#55FF55défini à &#FFB300" + data.getLevel() +
+                "&#55FF55. &#606060(&#FFB300" + old + " &#606060→ &#FFB300" + data.getLevel() +
+                "&#606060, temps recalculé : &#FFFF55" + data.getMinutes() + " &#606060min)"
+            ));
+            notifyTarget(data.getName(), ColorUtil.colorize(
+                "&#55FF55Un administrateur a défini votre niveau à &#FFB300" + data.getLevel() + "&#55FF55."
+            ));
         });
     }
 
@@ -163,7 +164,7 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
             PlayerData data = plugin.getDatabaseManager().loadPlayerByName(targetName);
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (data == null) {
-                    sender.sendMessage("§cJoueur §6" + targetName + " §cintrouvable en base de données.");
+                    sender.sendMessage(ColorUtil.colorize("&#FF5555Joueur &#FFFFFF" + targetName + " &#FF5555introuvable en base de données."));
                     return;
                 }
                 modifier.accept(data);
@@ -193,22 +194,22 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         try {
             int value = Integer.parseInt(raw);
             if (value < 0) {
-                sender.sendMessage("§cLa valeur doit être un entier positif ou zéro.");
+                sender.sendMessage(ColorUtil.colorize("&#FF5555La valeur doit être un entier positif ou zéro."));
                 return -1;
             }
             return value;
         } catch (NumberFormatException e) {
-            sender.sendMessage("§c\"" + raw + "\" n'est pas un nombre valide.");
+            sender.sendMessage(ColorUtil.colorize("&#FF5555&#FFFFFF" + raw + " &#FF5555n'est pas un nombre valide."));
             return -1;
         }
     }
 
     private void sendHelp(CommandSender sender) {
-        sender.sendMessage("§6§l=== Commandes /niveau ===");
-        sender.sendMessage("§e/niveau add <valeur> <pseudo>   §7- Ajouter des niveaux");
-        sender.sendMessage("§e/niveau remove <valeur> <pseudo>§7- Retirer des niveaux");
-        sender.sendMessage("§e/niveau set <valeur> <pseudo>   §7- Définir un niveau précis");
-        sender.sendMessage("§e/niveau reset <pseudo>          §7- Remettre à zéro");
+        sender.sendMessage(ColorUtil.colorize("&#FFB300&l=== Commandes /niveau ==="));
+        sender.sendMessage(ColorUtil.colorize("&#FFB300/niveau add &#FFFFFF<valeur> <pseudo>    &#606060- Ajouter des niveaux"));
+        sender.sendMessage(ColorUtil.colorize("&#FFB300/niveau remove &#FFFFFF<valeur> <pseudo> &#606060- Retirer des niveaux"));
+        sender.sendMessage(ColorUtil.colorize("&#FFB300/niveau set &#FFFFFF<valeur> <pseudo>    &#606060- Définir un niveau précis"));
+        sender.sendMessage(ColorUtil.colorize("&#FFB300/niveau reset &#FFFFFF<pseudo>           &#606060- Remettre à zéro"));
     }
 
     // -------------------------------------------------------------------------

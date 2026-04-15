@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.listeners;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -32,8 +33,8 @@ public class ChatListener implements Listener {
         int level = (data != null) ? data.getLevel() : 0;
 
         // %1$s = display name Bukkit (non utilisé ici)  %2$s = message
-        event.setFormat(
-            "§8[§6Niveau " + level + "§8] §f" + event.getPlayer().getName() + " §8: §7%2$s"
-        );
+        event.setFormat(ColorUtil.colorize(
+            "&#606060[&#FFB300Niveau " + level + "&#606060] &#FFFFFF" + event.getPlayer().getName() + " &#606060: &#CCCCCC%2$s"
+        ));
     }
 }

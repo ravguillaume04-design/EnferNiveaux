@@ -2,6 +2,7 @@ package fr.ravguillaume.niveaux.scheduler;
 
 import fr.ravguillaume.niveaux.NiveauxPlugin;
 import fr.ravguillaume.niveaux.data.PlayerData;
+import fr.ravguillaume.niveaux.util.ColorUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -56,9 +57,9 @@ public class PlaytimeScheduler extends BukkitRunnable {
                 // Retour sur le thread principal pour l'envoi du message
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (player.isOnline()) {
-                        player.sendMessage(
-                            "§a§lFélicitations ! §aVous avez atteint le §6§lniveau " + newLevel + "§a !"
-                        );
+                        player.sendMessage(ColorUtil.colorize(
+                            "&#55FF55&lFélicitations ! &#55FF55Vous avez atteint le &#FFB300&lniveau " + newLevel + "&#55FF55 !"
+                        ));
                     }
                 });
             }
