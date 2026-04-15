@@ -9,7 +9,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -17,7 +16,6 @@ import java.util.function.Consumer;
  * Commandes administrateur pour gérer les niveaux des joueurs.
  *
  * Usage :
- *   /niveau get    <pseudo>
  *   /niveau reset  <pseudo>
  *   /niveau add    <valeur> <pseudo>
  *   /niveau remove <valeur> <pseudo>
@@ -26,7 +24,7 @@ import java.util.function.Consumer;
 public class NiveauCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> ACTIONS = Arrays.asList(
-            "add", "remove", "set", "reset", "get"
+            "add", "remove", "set", "reset"
     );
 
     private final NiveauxPlugin plugin;
@@ -52,7 +50,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
         }
 
         switch (args[0].toLowerCase()) {
-            case "get"    -> handleGet(sender, args);
             case "reset"  -> handleReset(sender, args);
             case "add"    -> handleAdd(sender, args);
             case "remove" -> handleRemove(sender, args);
@@ -65,18 +62,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------------
     // Handlers
     // -------------------------------------------------------------------------
-
-    private void handleGet(CommandSender sender, String[] args) {
-        if (args.length < 2) { sender.sendMessage("§cUsage : /niveau get <pseudo>"); return; }
-
-        resolveData(sender, args[1], data ->
-            sender.sendMessage(
-                "§7Joueur §6" + data.getName() +
-                " §7: §6Niveau " + data.getLevel() +
-                " §7(§e" + data.getMinutes() + " §7min)"
-            )
-        );
-    }
 
     private void handleReset(CommandSender sender, String[] args) {
         if (args.length < 2) { sender.sendMessage("§cUsage : /niveau reset <pseudo>"); return; }
@@ -157,32 +142,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------------
 
     /**
-     * Résout les données d'un joueur (lecture seule) et exécute le callback
-     * sur le thread principal. Cherche d'abord dans le cache, puis en base.
-     */
-    private void resolveData(CommandSender sender, String targetName, Consumer<PlayerData> callback) {
-        Player online = Bukkit.getPlayerExact(targetName);
-        if (online != null) {
-            PlayerData cached = plugin.getPlayerCache().get(online.getUniqueId());
-            if (cached != null) {
-                callback.accept(cached);
-                return;
-            }
-        }
-
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            PlayerData data = plugin.getDatabaseManager().loadPlayerByName(targetName);
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (data == null) {
-                    sender.sendMessage("§cJoueur §6" + targetName + " §cintrouvable en base de données.");
-                    return;
-                }
-                callback.accept(data);
-            });
-        });
-    }
-
-    /**
      * Résout les données d'un joueur (modification) et exécute le callback
      * sur le thread principal. Sauvegarde automatiquement après modification.
      */
@@ -246,7 +205,6 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6§l=== Commandes /niveau ===");
-        sender.sendMessage("§e/niveau get <pseudo>            §7- Voir le niveau d'un joueur");
         sender.sendMessage("§e/niveau add <valeur> <pseudo>   §7- Ajouter des niveaux");
         sender.sendMessage("§e/niveau remove <valeur> <pseudo>§7- Retirer des niveaux");
         sender.sendMessage("§e/niveau set <valeur> <pseudo>   §7- Définir un niveau précis");
@@ -270,8 +228,8 @@ public class NiveauCommand implements CommandExecutor, TabCompleter {
 
         String action = args[0].toLowerCase();
 
-        // /niveau get <pseudo>  ou  /niveau reset <pseudo>
-        if (args.length == 2 && (action.equals("get") || action.equals("reset"))) {
+        // /niveau reset <pseudo>
+        if (args.length == 2 && action.equals("reset")) {
             return onlinePlayers(args[1]);
         }
 

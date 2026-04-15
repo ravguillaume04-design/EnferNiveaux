@@ -11,8 +11,7 @@ commands:
     usage: /niveau <add|remove|set|reset|get> [valeur] <pseudo>
     permission: niveaux.admin
     aliases:
-      - niv
-      - level
+      - n
 
 permissions:
   niveaux.admin:
