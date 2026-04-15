@@ -3,8 +3,7 @@ version: 1.0.0
 main: fr.ravguillaume.niveaux.NiveauxPlugin
 api-version: 1.20
 description: Système de progression basé sur le temps de jeu
-authors:
-  - Saguime
+author: Saguime
 
 commands:
   niveau:
