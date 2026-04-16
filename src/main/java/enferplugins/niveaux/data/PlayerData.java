@@ -6,8 +6,10 @@ public class PlayerData {
 
     private final UUID uuid;
     private String name;
-    private int level;
-    private int minutes;
+    // volatile : garantit la visibilite entre le thread principal (commandes)
+    // et les threads async (AsyncPlayerChatEvent, PlaytimeScheduler)
+    private volatile int level;
+    private volatile int minutes;
 
     public PlayerData(UUID uuid, String name, int level, int minutes) {
         this.uuid = uuid; this.name = name; this.level = level; this.minutes = minutes;
@@ -21,9 +23,21 @@ public class PlayerData {
     }
 
     public void reset() { this.level = 0; this.minutes = 0; }
-    public void addLevel(int amount) { this.level = Math.max(0, this.level + amount); this.minutes = this.level * 60; }
-    public void removeLevel(int amount) { this.level = Math.max(0, this.level - amount); this.minutes = this.level * 60; }
-    public void setLevel(int level) { this.level = Math.max(0, level); this.minutes = this.level * 60; }
+
+    public void addLevel(int amount) {
+        this.level = Math.max(0, this.level + amount);
+        this.minutes = this.level * 60;
+    }
+
+    public void removeLevel(int amount) {
+        this.level = Math.max(0, this.level - amount);
+        this.minutes = this.level * 60;
+    }
+
+    public void setLevel(int level) {
+        this.level = Math.max(0, level);
+        this.minutes = this.level * 60;
+    }
 
     public UUID getUuid() { return uuid; }
     public String getName() { return name; }
