@@ -6,8 +6,10 @@ public class PlayerData {
 
     private final UUID uuid;
     private String name;
-    private int level;
-    private int minutes;
+    // volatile : garantit la visibilite entre le thread principal (commandes)
+    // et les threads async (AsyncPlayerChatEvent, PlaytimeScheduler)
+    private volatile int level;
+    private volatile int minutes;
 
     public PlayerData(UUID uuid, String name, int level, int minutes) {
         this.uuid = uuid; this.name = name; this.level = level; this.minutes = minutes;
