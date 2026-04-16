@@ -2,18 +2,20 @@ name: Niveaux
 version: 1.0.0
 main: enferplugins.niveaux.NiveauxPlugin
 api-version: 1.20
-description: Système de progression basé sur le temps de jeu
+description: "Systeme de progression base sur le temps de jeu"
 author: Saguime
 
 commands:
   niveau:
-    description: Gestion des niveaux des joueurs
-    usage: /niveau <add|remove|set|reset> [valeur] <pseudo>
-    permission: niveaux.admin
+    description: "Gestion des niveaux des joueurs"
+    usage: "/niveau <pseudo> | /niveau <add|remove|set|reset> [valeur] <pseudo>"
     aliases:
       - n
 
 permissions:
   niveaux.admin:
-    description: Accès complet aux commandes de gestion des niveaux
+    description: "Acces complet aux commandes de gestion des niveaux"
     default: op
+  niveaux.see:
+    description: "Consulter le niveau d'un joueur"
+    default: true
