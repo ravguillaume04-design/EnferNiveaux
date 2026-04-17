@@ -38,7 +38,7 @@ public class NiveauxPlugin extends JavaPlugin {
         getCommand("niveau").setTabCompleter(niveauCmd);
         playtimeScheduler = new PlaytimeScheduler(this);
         playtimeScheduler.start();
-        getLogger().info("Plugin Niveaux v" + getDescription().getVersion() + " activé.");
+        getLogger().info("EnferNiveaux v" + getDescription().getVersion() + " activé.");
     }
 
     @Override
@@ -49,7 +49,7 @@ public class NiveauxPlugin extends JavaPlugin {
             getLogger().info("Sauvegarde finale de " + playerCache.size() + " joueur(s) effectuée.");
         }
         if (databaseManager != null) databaseManager.close();
-        getLogger().info("Plugin Niveaux désactivé.");
+        getLogger().info("EnferNiveaux désactivé.");
     }
 
     public ConfigManager getConfigManager() { return configManager; }
