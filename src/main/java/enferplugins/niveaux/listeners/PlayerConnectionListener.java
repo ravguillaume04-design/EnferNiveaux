@@ -20,6 +20,9 @@ public class PlayerConnectionListener implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         final UUID uuid = event.getPlayer().getUniqueId();
         final String name = event.getPlayer().getName();
+        // Placeholder immédiat : évite que le cache retourne null
+        // pendant que le chargement DB async est en cours.
+        plugin.getPlayerCache().put(uuid, new PlayerData(uuid, name, 0, 0));
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             PlayerData data = plugin.getDatabaseManager().loadPlayer(uuid, name);
             data.setName(name);
