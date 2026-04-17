@@ -7,7 +7,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class PlaytimeScheduler extends BukkitRunnable {
 
@@ -17,7 +19,8 @@ public class PlaytimeScheduler extends BukkitRunnable {
 
     public PlaytimeScheduler(NiveauxPlugin plugin) { this.plugin = plugin; }
 
-    public void start() { this.runTaskTimerAsynchronously(plugin, TICKS_PER_MINUTE, TICKS_PER_MINUTE); }
+    // Runs on the main thread so Bukkit API calls (getOnlinePlayers, getWorld) are thread-safe.
+    public void start() { this.runTaskTimer(plugin, TICKS_PER_MINUTE, TICKS_PER_MINUTE); }
 
     @Override
     public void run() {
@@ -31,16 +34,19 @@ public class PlaytimeScheduler extends BukkitRunnable {
             if (leveledUp) {
                 final int newLevel = data.getLevel();
                 final String name = data.getName();
-                final java.util.UUID uuid = player.getUniqueId();
-                Bukkit.getScheduler().runTask(plugin, () ->
-                    Bukkit.getPluginManager().callEvent(new PlayerLevelChangeEvent(uuid, name, newLevel - 1, newLevel, PlayerLevelChangeEvent.Reason.PLAYTIME)));
+                final UUID uuid = player.getUniqueId();
+                Bukkit.getPluginManager().callEvent(
+                    new PlayerLevelChangeEvent(uuid, name, newLevel - 1, newLevel, PlayerLevelChangeEvent.Reason.PLAYTIME));
             }
         }
         if (minutesSinceLastSave >= plugin.getConfigManager().getAutoSaveInterval()) {
             minutesSinceLastSave = 0;
-            int count = plugin.getPlayerCache().size();
-            plugin.getDatabaseManager().saveAllPlayers(plugin.getPlayerCache().values());
-            plugin.getLogger().info("[Auto-Save] " + count + " joueur(s) sauvegardé(s).");
+            final int count = plugin.getPlayerCache().size();
+            final List<PlayerData> snapshot = new ArrayList<>(plugin.getPlayerCache().values());
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                plugin.getDatabaseManager().saveAllPlayers(snapshot);
+                plugin.getLogger().info("[Auto-Save] " + count + " joueur(s) sauvegardé(s).");
+            });
         }
     }
 }

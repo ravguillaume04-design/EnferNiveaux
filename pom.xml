@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>enferplugins</groupId>
-    <artifactId>niveaux</artifactId>
+    <artifactId>enferniveaux</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>Niveaux</name>
+    <name>EnferNiveaux</name>
     <description>Système de progression basé sur le temps de jeu</description>
 
     <properties>
