@@ -4,11 +4,11 @@
 
 # Connexion à la base de données MySQL
 database:
-  host: localhost
+  host: sql3.minestrator.com
   port: 3306
-  name: minecraft
-  username: root
-  password: password
+  name: minesr_ikqGORtx
+  username: minesr_ikqGORtx
+  password: O3IAk4Um1l7Myz5a
 
 # Liste des mondes où le temps de jeu est comptabilisé pour les niveaux.
 # Les joueurs dans un monde non listé ne progresseront pas.
