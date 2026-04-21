@@ -270,7 +270,8 @@ class OverlayApp:
         self.root.title("FiveM Recorder")
         self.root.attributes("-topmost", True)
         self.root.resizable(False, False)
-        self.root.geometry("240+10+10")
+        self.root.geometry("+10+10")   # Position seulement, hauteur automatique
+        self.root.minsize(240, 0)
         try:
             self.root.wm_attributes("-toolwindow", True)  # Pas dans la barre des tâches
         except Exception:
