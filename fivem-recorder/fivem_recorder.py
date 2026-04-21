@@ -343,7 +343,8 @@ class OverlayApp:
         self._paused        = False
         self._hide_job      = None
         self._mouse_var     = tk.BooleanVar(value=True)
-        self._interval_var  = tk.IntVar(value=0)
+        self._interval_min  = tk.IntVar(value=0)
+        self._interval_sec  = tk.IntVar(value=0)
 
         self.recorder = Recorder()
         self.replayer = Replayer()
@@ -402,12 +403,16 @@ class OverlayApp:
         tk.Checkbutton(opt, text="Enregistrer les mouvements de souris",
                        variable=self._mouse_var, font=("Helvetica", 9)).pack(anchor="w")
 
+        tk.Label(opt, text="Intervalle entre cycles :",
+                 font=("Helvetica", 9)).pack(anchor="w", pady=(4, 0))
         int_row = tk.Frame(opt)
-        int_row.pack(fill="x", pady=(4, 0))
-        tk.Label(int_row, text="Intervalle entre cycles (s) :",
-                 font=("Helvetica", 9)).pack(side="left")
-        tk.Spinbox(int_row, from_=0, to=300, textvariable=self._interval_var,
-                   width=4, font=("Helvetica", 9)).pack(side="left", padx=6)
+        int_row.pack(anchor="w")
+        tk.Spinbox(int_row, from_=0, to=59, textvariable=self._interval_min,
+                   width=3, font=("Helvetica", 9)).pack(side="left")
+        tk.Label(int_row, text="min", font=("Helvetica", 9)).pack(side="left", padx=(2, 8))
+        tk.Spinbox(int_row, from_=0, to=59, textvariable=self._interval_sec,
+                   width=3, font=("Helvetica", 9)).pack(side="left")
+        tk.Label(int_row, text="sec", font=("Helvetica", 9)).pack(side="left", padx=(2, 0))
 
         ttk.Separator(self.root).pack(fill="x", padx=8)
 
@@ -497,9 +502,10 @@ class OverlayApp:
                 text=f"Prochain cycle dans {r:.0f}s..."
             ))
 
+        interval = self._interval_min.get() * 60 + self._interval_sec.get()
         self.replayer.start(
             self.recorder.events,
-            interval=self._interval_var.get(),
+            interval=interval,
             on_cycle=on_cycle,
             on_interval_tick=on_interval_tick,
         )
