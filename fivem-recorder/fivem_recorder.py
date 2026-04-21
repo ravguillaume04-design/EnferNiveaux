@@ -5,6 +5,12 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from pynput import keyboard, mouse
 
+try:
+    from cheat_bot import BotWindow
+    _BOT_AVAILABLE = True
+except ImportError:
+    _BOT_AVAILABLE = False
+
 TOGGLE_VK = 107   # Numpad +
 PAUSE_VK  = 109   # Numpad -
 MOUSE_THROTTLE = 0.05
@@ -346,8 +352,9 @@ class OverlayApp:
         self._interval_min  = tk.IntVar(value=0)
         self._interval_sec  = tk.IntVar(value=0)
 
-        self.recorder = Recorder()
-        self.replayer = Replayer()
+        self.recorder   = Recorder()
+        self.replayer   = Replayer()
+        self._bot_win   = None
 
         self._build_ui()
         self._start_hotkeys()
@@ -423,6 +430,14 @@ class OverlayApp:
                   command=self.save).pack(side="left", padx=4)
         tk.Button(file_row, text="Charger", width=12,
                   command=self.load).pack(side="left", padx=4)
+
+        # Bot
+        if _BOT_AVAILABLE:
+            ttk.Separator(self.root).pack(fill="x", padx=8)
+            tk.Button(self.root, text="🤖  Ouvrir le Bot Farming",
+                      bg="#4a235a", fg="white", relief="flat",
+                      font=("Helvetica", 10), pady=6, cursor="hand2",
+                      command=self._open_bot).pack(fill="x", padx=12, pady=6)
 
         self._update_buttons()
 
@@ -563,6 +578,12 @@ class OverlayApp:
     # ---------------------------------------------------------------- #
     #  Hotkeys globaux                                                   #
     # ---------------------------------------------------------------- #
+
+    def _open_bot(self):
+        if self._bot_win and self._bot_win._win.winfo_exists():
+            self._bot_win._win.lift()
+        else:
+            self._bot_win = BotWindow(self.root)
 
     def _toggle_record(self):
         """Lance ou arrête l'enregistrement directement (touche Entrée)."""

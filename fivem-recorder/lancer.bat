@@ -14,11 +14,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Installe pynput si necessaire
+:: Installe les dependances
 echo Installation des dependances...
-py -m pip install pynput --quiet
+py -m pip install pynput psutil --quiet
 if errorlevel 1 (
-    echo ERREUR lors de l'installation de pynput.
+    echo ERREUR lors de l'installation des dependances.
     pause
     exit /b 1
 )
