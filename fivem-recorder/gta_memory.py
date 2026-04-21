@@ -65,12 +65,16 @@ PED_PATTERNS = [
     (b'\x48\x8B\x05\x00\x00\x00\x00\x8B\x50\x18', 'xxx????xxx'),
 ]
 
-# Offsets CPed → position (matrice de transformation 4x4, ligne-major)
+# Offsets CPed → matrice de transformation (colonne-major, Direct3D)
 # Documentés publiquement dans les outils de modding GTA V
-MATRIX_OFFSET = 0x90          # Début de la matrice dans CPed
-POS_X = MATRIX_OFFSET + 0x30  # m[3][0]
-POS_Y = MATRIX_OFFSET + 0x34  # m[3][1]
-POS_Z = MATRIX_OFFSET + 0x38  # m[3][2]
+MATRIX_OFFSET = 0x90           # Début de la matrice dans CPed
+# Vecteur forward (2e colonne de la matrice = direction du regard)
+FWD_X = MATRIX_OFFSET + 0x10  # forward.x
+FWD_Y = MATRIX_OFFSET + 0x14  # forward.y
+# Position (4e colonne)
+POS_X = MATRIX_OFFSET + 0x30  # pos.x
+POS_Y = MATRIX_OFFSET + 0x34  # pos.y
+POS_Z = MATRIX_OFFSET + 0x38  # pos.z
 
 SCAN_SIZE = 60 * 1024 * 1024  # 60 Mo de l'exécutable
 CHUNK     = 8192
@@ -150,6 +154,15 @@ class GTAMemory:
         if x == 0.0 and y == 0.0 and z == 0.0:
             return None
         return (x, y, z)
+
+    def get_heading(self):
+        """Retourne le cap du joueur en radians (0 = Nord, π/2 = Est)."""
+        ped = self._ped()
+        if not ped:
+            return 0.0
+        fx = self._rf(ped + FWD_X)
+        fy = self._rf(ped + FWD_Y)
+        return math.atan2(fx, fy)
 
     def teleport(self, x, y, z):
         """Téléporte le joueur. Retourne True si succès."""
