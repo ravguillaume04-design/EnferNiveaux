@@ -5,9 +5,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from pynput import keyboard, mouse
 
-# La touche + (numpad vk=107, ou char='+')
-TOGGLE_VK = 107
-MOUSE_THROTTLE = 0.05  # 50ms entre enregistrements souris
+TOGGLE_VK = 107   # Numpad +
+PAUSE_VK  = 109   # Numpad -
+MOUSE_THROTTLE = 0.05
 
 
 # ------------------------------------------------------------------ #
@@ -49,11 +49,24 @@ def _parse_button(s):
 
 
 def _is_toggle(key):
-    """Vérifie si la touche est + (numpad ou clavier)."""
     try:
         return key.char == "+"
     except AttributeError:
         return getattr(key, "vk", None) == TOGGLE_VK
+
+
+def _is_pause_key(key):
+    try:
+        return key.char == "-"
+    except AttributeError:
+        return getattr(key, "vk", None) == PAUSE_VK
+
+
+def _is_filtered(key):
+    """Touches jamais enregistrées : +, -, Echap."""
+    if _is_toggle(key) or _is_pause_key(key):
+        return True
+    return key == keyboard.Key.esc
 
 
 # ------------------------------------------------------------------ #
@@ -115,8 +128,7 @@ class Recorder:
         return time.perf_counter() - self._start_time
 
     def _on_key_press(self, key):
-        # Ne pas enregistrer la touche + (toggle du menu)
-        if _is_toggle(key) or not self.is_recording:
+        if _is_filtered(key) or not self.is_recording:
             return
         s = _serialize_key(key)
         if s:
@@ -124,7 +136,7 @@ class Recorder:
                 self.events.append({"type": "key_press", "t": self._ts(), "key": s})
 
     def _on_key_release(self, key):
-        if _is_toggle(key) or not self.is_recording:
+        if _is_filtered(key) or not self.is_recording:
             return
         s = _serialize_key(key)
         if s:
@@ -169,46 +181,67 @@ class Replayer:
         self._kb = keyboard.Controller()
         self._mouse = mouse.Controller()
         self._running = False
-        self._thread = None
+        self._paused  = False
+        self._thread  = None
 
     @property
     def is_running(self):
         return self._running
 
-    def start(self, events, on_cycle=None):
+    @property
+    def is_paused(self):
+        return self._paused
+
+    def toggle_pause(self):
+        self._paused = not self._paused
+
+    def start(self, events, interval=0, on_cycle=None, on_interval_tick=None):
         if self._running:
             return
         self._running = True
-        self._thread = threading.Thread(
-            target=self._run, args=(events, on_cycle), daemon=True
+        self._paused  = False
+        self._thread  = threading.Thread(
+            target=self._run,
+            args=(events, interval, on_cycle, on_interval_tick),
+            daemon=True,
         )
         self._thread.start()
 
     def stop(self):
         self._running = False
+        self._paused  = False
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
 
-    def _run(self, events, on_cycle):
+    # ---------------------------------------------------------------- #
+
+    def _run(self, events, interval, on_cycle, on_interval_tick):
         cycle = 0
         while self._running:
             cycle += 1
             if on_cycle:
                 on_cycle(cycle)
             self._play_once(events)
+            if not self._running:
+                break
+            if interval > 0:
+                self._wait_interval(interval, on_interval_tick)
 
     def _play_once(self, events):
         pressed_keys, pressed_buttons = set(), set()
-        start = time.perf_counter()
+        wall_start  = time.perf_counter()
+        total_pause = [0.0]  # liste pour pouvoir modifier depuis _wait_for_event
+
         for ev in events:
             if not self._running:
                 break
-            self._wait_until(start + ev["t"])
+            self._wait_for_event(wall_start, total_pause, ev["t"])
             if not self._running:
                 break
             self._execute(ev, pressed_keys, pressed_buttons)
-        # Relâcher toutes les touches encore pressées en fin de cycle
+
+        # Relâcher tout ce qui est encore pressé
         for k in list(pressed_keys):
             try:
                 self._kb.release(k)
@@ -220,12 +253,34 @@ class Replayer:
             except Exception:
                 pass
 
-    def _wait_until(self, target):
+    def _wait_for_event(self, wall_start, total_pause, event_t):
+        """
+        Attend que le temps virtuel (hors pauses) atteigne event_t.
+        Le temps virtuel = temps réel écoulé - temps total en pause.
+        """
         while self._running:
-            remaining = target - time.perf_counter()
+            # Accumule la durée de pause
+            if self._paused:
+                pause_start = time.perf_counter()
+                while self._paused and self._running:
+                    time.sleep(0.02)
+                total_pause[0] += time.perf_counter() - pause_start
+
+            virtual_elapsed = time.perf_counter() - wall_start - total_pause[0]
+            if virtual_elapsed >= event_t:
+                break
+            time.sleep(min(event_t - virtual_elapsed, 0.02))
+
+    def _wait_interval(self, interval, on_tick):
+        """Attend `interval` secondes entre deux cycles, avec mise à jour de compteur."""
+        deadline = time.perf_counter() + interval
+        while self._running:
+            remaining = deadline - time.perf_counter()
             if remaining <= 0:
                 break
-            time.sleep(min(remaining, 0.02))
+            if on_tick:
+                on_tick(remaining)
+            time.sleep(min(remaining, 0.25))
 
     def _execute(self, ev, pressed_keys, pressed_buttons):
         t = ev["type"]
@@ -270,28 +325,30 @@ class OverlayApp:
         self.root.title("FiveM Recorder")
         self.root.attributes("-topmost", True)
         self.root.resizable(False, False)
-        self.root.geometry("+10+10")   # Position seulement, hauteur automatique
+        self.root.geometry("+10+10")
         self.root.minsize(240, 0)
         try:
-            self.root.wm_attributes("-toolwindow", True)  # Pas dans la barre des tâches
+            self.root.wm_attributes("-toolwindow", True)
         except Exception:
             pass
 
-        self._state      = self.IDLE
-        self._has_events = False
-        self._cycles     = 0
-        self._hide_job   = None
-        self._mouse_var  = tk.BooleanVar(value=True)
+        self._state         = self.IDLE
+        self._has_events    = False
+        self._cycles        = 0
+        self._paused        = False
+        self._hide_job      = None
+        self._mouse_var     = tk.BooleanVar(value=True)
+        self._interval_var  = tk.IntVar(value=0)
 
         self.recorder = Recorder()
         self.replayer = Replayer()
 
         self._build_ui()
         self._start_hotkeys()
-        self.root.withdraw()  # Caché au démarrage
+        self.root.withdraw()
 
     # ---------------------------------------------------------------- #
-    #  Construction de l'UI                                             #
+    #  UI                                                                #
     # ---------------------------------------------------------------- #
 
     def _build_ui(self):
@@ -300,17 +357,16 @@ class OverlayApp:
         header.pack(fill="x")
         tk.Label(header, text="FiveM Recorder", bg="#1a1a2e", fg="white",
                  font=("Helvetica", 12, "bold")).pack()
-        tk.Label(header, text="Touche  +  pour ouvrir / fermer",
+        tk.Label(header, text="+  ouvrir/fermer     −  pause/reprendre",
                  bg="#1a1a2e", fg="#888888", font=("Helvetica", 8)).pack()
 
         # Statut
-        status_frame = tk.Frame(self.root, pady=6)
-        status_frame.pack(fill="x", padx=12)
-        self._status_label = tk.Label(status_frame, text="En attente",
+        sf = tk.Frame(self.root, pady=6)
+        sf.pack(fill="x", padx=12)
+        self._status_label = tk.Label(sf, text="En attente",
                                        font=("Helvetica", 11, "bold"), fg="gray")
         self._status_label.pack()
-        self._info_label = tk.Label(status_frame, text="", fg="gray",
-                                     font=("Helvetica", 9))
+        self._info_label = tk.Label(sf, text="", fg="gray", font=("Helvetica", 9))
         self._info_label.pack()
 
         ttk.Separator(self.root).pack(fill="x", padx=8)
@@ -319,26 +375,34 @@ class OverlayApp:
         self._btn_frame = tk.Frame(self.root)
         self._btn_frame.pack(fill="x", padx=12, pady=8)
 
-        def btn(parent, text, color, cmd):
+        def btn(text, color, cmd):
             return tk.Button(
-                parent, text=text, bg=color, fg="white",
+                self._btn_frame, text=text, bg=color, fg="white",
                 activebackground=color, activeforeground="white",
                 relief="flat", padx=6, pady=7, cursor="hand2",
                 font=("Helvetica", 10), command=cmd, width=26,
             )
 
-        self._rec_btn      = btn(self._btn_frame, "⏺   Enregistrer",           "#c0392b", self.start_record)
-        self._stop_rec_btn = btn(self._btn_frame, "⏹   Arrêter l'enregistrement", "#e67e22", self.stop_record)
-        self._rep_btn      = btn(self._btn_frame, "▶   Rejouer en boucle",      "#1e8449", self.start_replay)
-        self._stop_rep_btn = btn(self._btn_frame, "⏹   Arrêter le replay",      "#922b21", self.stop_replay)
+        self._rec_btn      = btn("⏺   Enregistrer",              "#c0392b", self.start_record)
+        self._stop_rec_btn = btn("⏹   Arrêter l'enregistrement", "#e67e22", self.stop_record)
+        self._rep_btn      = btn("▶   Rejouer en boucle",         "#1e8449", self.start_replay)
+        self._stop_rep_btn = btn("⏹   Arrêter le replay",         "#922b21", self.stop_replay)
 
         ttk.Separator(self.root).pack(fill="x", padx=8)
 
         # Options
         opt = tk.Frame(self.root)
-        opt.pack(fill="x", padx=12, pady=4)
+        opt.pack(fill="x", padx=12, pady=5)
+
         tk.Checkbutton(opt, text="Enregistrer les mouvements de souris",
                        variable=self._mouse_var, font=("Helvetica", 9)).pack(anchor="w")
+
+        int_row = tk.Frame(opt)
+        int_row.pack(fill="x", pady=(4, 0))
+        tk.Label(int_row, text="Intervalle entre cycles (s) :",
+                 font=("Helvetica", 9)).pack(side="left")
+        tk.Spinbox(int_row, from_=0, to=300, textvariable=self._interval_var,
+                   width=4, font=("Helvetica", 9)).pack(side="left", padx=6)
 
         ttk.Separator(self.root).pack(fill="x", padx=8)
 
@@ -397,7 +461,7 @@ class OverlayApp:
         self._status_label.config(text="⏺  Enregistrement...", fg="#c0392b")
         self._info_label.config(text="Jouez — appuyez + pour revoir le menu")
         self._update_buttons()
-        self._schedule_hide()  # Cache automatiquement après 1,8s
+        self._schedule_hide()
 
     def stop_record(self):
         self.recorder.stop()
@@ -411,8 +475,9 @@ class OverlayApp:
     def start_replay(self):
         if not self.recorder.events:
             return
-        self._state   = self.REP
-        self._cycles  = 0
+        self._state  = self.REP
+        self._cycles = 0
+        self._paused = False
         self._status_label.config(text="▶  Replay en cours...", fg="#1a5276")
         self._info_label.config(text="Cycle #0")
         self._update_buttons()
@@ -422,14 +487,43 @@ class OverlayApp:
             self._cycles = n
             self.root.after(0, lambda: self._info_label.config(text=f"Cycle #{n}"))
 
-        self.replayer.start(self.recorder.events, on_cycle=on_cycle)
+        def on_interval_tick(remaining):
+            self.root.after(0, lambda r=remaining: self._info_label.config(
+                text=f"Prochain cycle dans {r:.0f}s..."
+            ))
+
+        self.replayer.start(
+            self.recorder.events,
+            interval=self._interval_var.get(),
+            on_cycle=on_cycle,
+            on_interval_tick=on_interval_tick,
+        )
 
     def stop_replay(self):
         self.replayer.stop()
-        self._state = self.IDLE
+        self._state  = self.IDLE
+        self._paused = False
         self._status_label.config(text="Replay arrêté", fg="gray")
         self._info_label.config(text=f"Cycles complétés : {self._cycles}")
         self._update_buttons()
+
+    def _toggle_pause(self):
+        if self._state != self.REP:
+            return
+        self._paused = not self._paused
+        self.replayer.toggle_pause()
+        if self._paused:
+            self._status_label.config(text="⏸  En pause", fg="#e67e22")
+            self._info_label.config(text="Appuyez − pour reprendre")
+            # Afficher le menu pour confirmer la pause
+            self._cancel_auto_hide()
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+        else:
+            self._status_label.config(text="▶  Replay en cours...", fg="#1a5276")
+            self._info_label.config(text=f"Cycle #{self._cycles}")
+            self._schedule_hide()
 
     # ---------------------------------------------------------------- #
     #  Fichier                                                           #
@@ -463,6 +557,8 @@ class OverlayApp:
         def on_press(key):
             if _is_toggle(key):
                 self.root.after(0, self._toggle_overlay)
+            elif _is_pause_key(key):
+                self.root.after(0, self._toggle_pause)
 
         self._hk = keyboard.Listener(on_press=on_press, suppress=False)
         self._hk.daemon = True
