@@ -2,15 +2,12 @@ import time
 import json
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import ttk, filedialog
 from pynput import keyboard, mouse
 
-# ------------------------------------------------------------------ #
-#  Constantes                                                          #
-# ------------------------------------------------------------------ #
-
-HOTKEYS = {keyboard.Key.f9, keyboard.Key.f10, keyboard.Key.f11}
-MOUSE_THROTTLE = 0.05  # 50ms entre chaque enregistrement de mouvement souris
+# La touche + (numpad vk=107, ou char='+')
+TOGGLE_VK = 107
+MOUSE_THROTTLE = 0.05  # 50ms entre enregistrements souris
 
 
 # ------------------------------------------------------------------ #
@@ -28,7 +25,7 @@ def _serialize_key(key):
 
 
 def _deserialize_key(data):
-    if data is None:
+    if not data:
         return None
     try:
         t, v = data["t"], data["v"]
@@ -49,6 +46,14 @@ def _parse_button(s):
     if "middle" in s:
         return mouse.Button.middle
     return mouse.Button.left
+
+
+def _is_toggle(key):
+    """Vérifie si la touche est + (numpad ou clavier)."""
+    try:
+        return key.char == "+"
+    except AttributeError:
+        return getattr(key, "vk", None) == TOGGLE_VK
 
 
 # ------------------------------------------------------------------ #
@@ -88,9 +93,9 @@ class Recorder:
     def stop(self):
         with self._lock:
             self.is_recording = False
-        for l in (self._kb_listener, self._mouse_listener):
-            if l:
-                l.stop()
+        for lst in (self._kb_listener, self._mouse_listener):
+            if lst:
+                lst.stop()
         self._kb_listener = None
         self._mouse_listener = None
 
@@ -110,7 +115,8 @@ class Recorder:
         return time.perf_counter() - self._start_time
 
     def _on_key_press(self, key):
-        if key in HOTKEYS or not self.is_recording:
+        # Ne pas enregistrer la touche + (toggle du menu)
+        if _is_toggle(key) or not self.is_recording:
             return
         s = _serialize_key(key)
         if s:
@@ -118,7 +124,7 @@ class Recorder:
                 self.events.append({"type": "key_press", "t": self._ts(), "key": s})
 
     def _on_key_release(self, key):
-        if key in HOTKEYS or not self.is_recording:
+        if _is_toggle(key) or not self.is_recording:
             return
         s = _serialize_key(key)
         if s:
@@ -169,12 +175,12 @@ class Replayer:
     def is_running(self):
         return self._running
 
-    def start(self, events, loop=True, on_cycle=None):
+    def start(self, events, on_cycle=None):
         if self._running:
             return
         self._running = True
         self._thread = threading.Thread(
-            target=self._run, args=(events, loop, on_cycle), daemon=True
+            target=self._run, args=(events, on_cycle), daemon=True
         )
         self._thread.start()
 
@@ -184,15 +190,13 @@ class Replayer:
             self._thread.join(timeout=2)
             self._thread = None
 
-    def _run(self, events, loop, on_cycle):
+    def _run(self, events, on_cycle):
         cycle = 0
         while self._running:
             cycle += 1
             if on_cycle:
                 on_cycle(cycle)
             self._play_once(events)
-            if not loop:
-                self._running = False
 
     def _play_once(self, events):
         pressed_keys, pressed_buttons = set(), set()
@@ -204,6 +208,7 @@ class Replayer:
             if not self._running:
                 break
             self._execute(ev, pressed_keys, pressed_buttons)
+        # Relâcher toutes les touches encore pressées en fin de cycle
         for k in list(pressed_keys):
             try:
                 self._kb.release(k)
@@ -252,10 +257,10 @@ class Replayer:
 
 
 # ------------------------------------------------------------------ #
-#  Interface graphique                                                 #
+#  Overlay                                                             #
 # ------------------------------------------------------------------ #
 
-class App:
+class OverlayApp:
     IDLE = "idle"
     REC  = "recording"
     REP  = "replaying"
@@ -263,168 +268,174 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("FiveM Recorder")
+        self.root.attributes("-topmost", True)
         self.root.resizable(False, False)
+        self.root.geometry("240+10+10")
+        try:
+            self.root.wm_attributes("-toolwindow", True)  # Pas dans la barre des tâches
+        except Exception:
+            pass
 
+        self._state      = self.IDLE
+        self._has_events = False
+        self._cycles     = 0
+        self._hide_job   = None
         self._mouse_var  = tk.BooleanVar(value=True)
-        self._delay_var  = tk.IntVar(value=5)
-        self._status_var = tk.StringVar(value="En attente")
-        self._info_var   = tk.StringVar(value="")
 
         self.recorder = Recorder()
         self.replayer = Replayer()
-        self._state   = self.IDLE
-        self._cycles  = 0
 
         self._build_ui()
         self._start_hotkeys()
+        self.root.withdraw()  # Caché au démarrage
 
-    # -- UI --------------------------------------------------------- #
+    # ---------------------------------------------------------------- #
+    #  Construction de l'UI                                             #
+    # ---------------------------------------------------------------- #
 
     def _build_ui(self):
-        P = dict(padx=10, pady=5)
+        # En-tête
+        header = tk.Frame(self.root, bg="#1a1a2e", pady=8)
+        header.pack(fill="x")
+        tk.Label(header, text="FiveM Recorder", bg="#1a1a2e", fg="white",
+                 font=("Helvetica", 12, "bold")).pack()
+        tk.Label(header, text="Touche  +  pour ouvrir / fermer",
+                 bg="#1a1a2e", fg="#888888", font=("Helvetica", 8)).pack()
 
         # Statut
-        sf = tk.LabelFrame(self.root, text="Statut", **P)
-        sf.pack(fill="x", **P)
-        self._slabel = tk.Label(sf, textvariable=self._status_var,
-                                font=("Helvetica", 13, "bold"), fg="gray")
-        self._slabel.pack()
-        tk.Label(sf, textvariable=self._info_var, fg="gray").pack()
+        status_frame = tk.Frame(self.root, pady=6)
+        status_frame.pack(fill="x", padx=12)
+        self._status_label = tk.Label(status_frame, text="En attente",
+                                       font=("Helvetica", 11, "bold"), fg="gray")
+        self._status_label.pack()
+        self._info_label = tk.Label(status_frame, text="", fg="gray",
+                                     font=("Helvetica", 9))
+        self._info_label.pack()
 
-        # Boutons
-        cf = tk.LabelFrame(self.root, text="Contrôles", **P)
-        cf.pack(fill="x", **P)
-        self._rec_btn = tk.Button(cf, text="⏺  Enregistrer  (F9)",
-                                  width=28, command=self.toggle_record)
-        self._rec_btn.pack(pady=3)
-        self._rep_btn = tk.Button(cf, text="▶  Rejouer en boucle  (F10)",
-                                  width=28, command=self.toggle_replay, state="disabled")
-        self._rep_btn.pack(pady=3)
+        ttk.Separator(self.root).pack(fill="x", padx=8)
 
-        # Paramètres
-        pf = tk.LabelFrame(self.root, text="Paramètres", **P)
-        pf.pack(fill="x", **P)
-        row = tk.Frame(pf)
-        row.pack(fill="x", pady=2)
-        tk.Label(row, text="Délai avant replay (s) :").pack(side="left")
-        tk.Spinbox(row, from_=0, to=30, textvariable=self._delay_var,
-                   width=4).pack(side="left", padx=5)
-        tk.Checkbutton(pf, text="Enregistrer les mouvements de souris",
-                       variable=self._mouse_var).pack(anchor="w", pady=2)
+        # Boutons dynamiques
+        self._btn_frame = tk.Frame(self.root)
+        self._btn_frame.pack(fill="x", padx=12, pady=8)
+
+        def btn(parent, text, color, cmd):
+            return tk.Button(
+                parent, text=text, bg=color, fg="white",
+                activebackground=color, activeforeground="white",
+                relief="flat", padx=6, pady=7, cursor="hand2",
+                font=("Helvetica", 10), command=cmd, width=26,
+            )
+
+        self._rec_btn      = btn(self._btn_frame, "⏺   Enregistrer",           "#c0392b", self.start_record)
+        self._stop_rec_btn = btn(self._btn_frame, "⏹   Arrêter l'enregistrement", "#e67e22", self.stop_record)
+        self._rep_btn      = btn(self._btn_frame, "▶   Rejouer en boucle",      "#1e8449", self.start_replay)
+        self._stop_rep_btn = btn(self._btn_frame, "⏹   Arrêter le replay",      "#922b21", self.stop_replay)
+
+        ttk.Separator(self.root).pack(fill="x", padx=8)
+
+        # Options
+        opt = tk.Frame(self.root)
+        opt.pack(fill="x", padx=12, pady=4)
+        tk.Checkbutton(opt, text="Enregistrer les mouvements de souris",
+                       variable=self._mouse_var, font=("Helvetica", 9)).pack(anchor="w")
+
+        ttk.Separator(self.root).pack(fill="x", padx=8)
 
         # Fichier
-        ff = tk.LabelFrame(self.root, text="Fichier", **P)
-        ff.pack(fill="x", **P)
-        row2 = tk.Frame(ff)
-        row2.pack()
-        tk.Button(row2, text="Sauvegarder", command=self.save).pack(side="left", padx=5)
-        tk.Button(row2, text="Charger",     command=self.load).pack(side="left", padx=5)
+        file_row = tk.Frame(self.root)
+        file_row.pack(pady=6)
+        tk.Button(file_row, text="Sauvegarder", width=12,
+                  command=self.save).pack(side="left", padx=4)
+        tk.Button(file_row, text="Charger", width=12,
+                  command=self.load).pack(side="left", padx=4)
 
-        # Aide
-        hf = tk.LabelFrame(self.root, text="Raccourcis globaux", **P)
-        hf.pack(fill="x", **P)
-        tk.Label(hf, text=(
-            "F9   —  Démarrer / Arrêter l'enregistrement\n"
-            "F10  —  Démarrer / Arrêter le replay\n"
-            "F11  —  Arrêt d'urgence"
-        ), justify="left", font=("Courier", 9)).pack(anchor="w")
+        self._update_buttons()
 
-    # -- Hotkeys ---------------------------------------------------- #
-
-    def _start_hotkeys(self):
-        def on_press(key):
-            if key == keyboard.Key.f9:
-                self.root.after(0, self.toggle_record)
-            elif key == keyboard.Key.f10:
-                self.root.after(0, self.toggle_replay)
-            elif key == keyboard.Key.f11:
-                self.root.after(0, self.emergency_stop)
-
-        self._hk = keyboard.Listener(on_press=on_press, suppress=False)
-        self._hk.daemon = True
-        self._hk.start()
-
-    # -- Actions ---------------------------------------------------- #
-
-    def toggle_record(self):
-        if self._state == self.REP:
-            return
+    def _update_buttons(self):
+        for w in self._btn_frame.winfo_children():
+            w.pack_forget()
         if self._state == self.IDLE:
-            self._start_rec()
-        else:
-            self._stop_rec()
-
-    def toggle_replay(self):
-        if self._state == self.REC:
-            return
-        if self._state == self.REP:
-            self._stop_rep()
-        elif self.recorder.events:
-            self._begin_rep()
-
-    def emergency_stop(self):
-        if self._state == self.REC:
-            self._stop_rec()
+            self._rec_btn.pack(fill="x", pady=2)
+            if self._has_events:
+                self._rep_btn.pack(fill="x", pady=2)
+        elif self._state == self.REC:
+            self._stop_rec_btn.pack(fill="x", pady=2)
         elif self._state == self.REP:
-            self._stop_rep()
+            self._stop_rep_btn.pack(fill="x", pady=2)
 
-    def _start_rec(self):
+    # ---------------------------------------------------------------- #
+    #  Overlay toggle                                                    #
+    # ---------------------------------------------------------------- #
+
+    def _toggle_overlay(self):
+        self._cancel_auto_hide()
+        if self.root.winfo_viewable():
+            self.root.withdraw()
+        else:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+
+    def _schedule_hide(self, ms=1800):
+        self._cancel_auto_hide()
+        self._hide_job = self.root.after(ms, self.root.withdraw)
+
+    def _cancel_auto_hide(self):
+        if self._hide_job:
+            self.root.after_cancel(self._hide_job)
+            self._hide_job = None
+
+    # ---------------------------------------------------------------- #
+    #  Actions                                                           #
+    # ---------------------------------------------------------------- #
+
+    def start_record(self):
         self.recorder = Recorder(record_mouse=self._mouse_var.get())
         self.recorder.start()
         self._state = self.REC
-        self._set_status("⏺  Enregistrement...", "red")
-        self._info_var.set("Jouez normalement — F9 pour arrêter")
-        self._rec_btn.config(text="⏹  Arrêter  (F9)")
-        self._rep_btn.config(state="disabled")
+        self._status_label.config(text="⏺  Enregistrement...", fg="#c0392b")
+        self._info_label.config(text="Jouez — appuyez + pour revoir le menu")
+        self._update_buttons()
+        self._schedule_hide()  # Cache automatiquement après 1,8s
 
-    def _stop_rec(self):
+    def stop_record(self):
         self.recorder.stop()
         self._state = self.IDLE
+        self._has_events = bool(self.recorder.events)
         n = len(self.recorder.events)
-        self._set_status("Enregistrement terminé", "green")
-        self._info_var.set(f"{n} événements capturés")
-        self._rec_btn.config(text="⏺  Enregistrer  (F9)")
-        self._rep_btn.config(state="normal" if n > 0 else "disabled")
+        self._status_label.config(text="Enregistrement terminé", fg="#1e8449")
+        self._info_label.config(text=f"{n} événements capturés")
+        self._update_buttons()
 
-    def _begin_rep(self):
-        delay = self._delay_var.get()
-        if delay > 0:
-            self._set_status(f"Démarrage dans {delay}s...", "orange")
-            self._info_var.set("Revenez sur FiveM !")
-            self._rep_btn.config(state="disabled")
-            self.root.after(delay * 1000, self._start_rep)
-        else:
-            self._start_rep()
-
-    def _start_rep(self):
-        self._state = self.REP
-        self._cycles = 0
-        self._set_status("▶  Replay en boucle...", "blue")
-        self._info_var.set("Cycle #0")
-        self._rep_btn.config(text="⏹  Arrêter  (F10)", state="normal")
-        self._rec_btn.config(state="disabled")
+    def start_replay(self):
+        if not self.recorder.events:
+            return
+        self._state   = self.REP
+        self._cycles  = 0
+        self._status_label.config(text="▶  Replay en cours...", fg="#1a5276")
+        self._info_label.config(text="Cycle #0")
+        self._update_buttons()
+        self._schedule_hide()
 
         def on_cycle(n):
             self._cycles = n
-            self.root.after(0, lambda: self._info_var.set(f"Cycle #{n}"))
+            self.root.after(0, lambda: self._info_label.config(text=f"Cycle #{n}"))
 
-        self.replayer.start(self.recorder.events, loop=True, on_cycle=on_cycle)
+        self.replayer.start(self.recorder.events, on_cycle=on_cycle)
 
-    def _stop_rep(self):
+    def stop_replay(self):
         self.replayer.stop()
         self._state = self.IDLE
-        self._set_status("Replay arrêté", "gray")
-        self._info_var.set(f"Cycles complétés : {self._cycles}")
-        self._rep_btn.config(text="▶  Rejouer en boucle  (F10)", state="normal")
-        self._rec_btn.config(state="normal")
+        self._status_label.config(text="Replay arrêté", fg="gray")
+        self._info_label.config(text=f"Cycles complétés : {self._cycles}")
+        self._update_buttons()
 
-    def _set_status(self, text, color):
-        self._status_var.set(text)
-        self._slabel.config(fg=color)
+    # ---------------------------------------------------------------- #
+    #  Fichier                                                           #
+    # ---------------------------------------------------------------- #
 
     def save(self):
         if not self.recorder.events:
-            messagebox.showwarning("Vide", "Aucun enregistrement à sauvegarder.")
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".json",
@@ -437,10 +448,24 @@ class App:
         path = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("Tous", "*.*")])
         if path:
             self.recorder.load(path)
+            self._has_events = bool(self.recorder.events)
             n = len(self.recorder.events)
-            self._set_status("Enregistrement chargé", "green")
-            self._info_var.set(f"{n} événements")
-            self._rep_btn.config(state="normal" if n > 0 else "disabled")
+            self._status_label.config(text="Enregistrement chargé", fg="#1e8449")
+            self._info_label.config(text=f"{n} événements")
+            self._update_buttons()
+
+    # ---------------------------------------------------------------- #
+    #  Hotkeys globaux                                                   #
+    # ---------------------------------------------------------------- #
+
+    def _start_hotkeys(self):
+        def on_press(key):
+            if _is_toggle(key):
+                self.root.after(0, self._toggle_overlay)
+
+        self._hk = keyboard.Listener(on_press=on_press, suppress=False)
+        self._hk.daemon = True
+        self._hk.start()
 
     def on_close(self):
         self.replayer.stop()
@@ -455,6 +480,6 @@ class App:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = App(root)
+    app = OverlayApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()
