@@ -62,9 +62,14 @@ def _is_pause_key(key):
         return getattr(key, "vk", None) == PAUSE_VK
 
 
+def _is_enter_key(key):
+    return key in (keyboard.Key.enter, keyboard.Key.num_lock) or \
+           getattr(key, "vk", None) in (13, 108)  # Enter + Numpad Enter
+
+
 def _is_filtered(key):
-    """Touches jamais enregistrées : +, -, Echap."""
-    if _is_toggle(key) or _is_pause_key(key):
+    """Touches jamais enregistrées : +, -, Entrée, Echap."""
+    if _is_toggle(key) or _is_pause_key(key) or _is_enter_key(key):
         return True
     return key == keyboard.Key.esc
 
@@ -357,7 +362,7 @@ class OverlayApp:
         header.pack(fill="x")
         tk.Label(header, text="FiveM Recorder", bg="#1a1a2e", fg="white",
                  font=("Helvetica", 12, "bold")).pack()
-        tk.Label(header, text="+  ouvrir/fermer     −  pause/reprendre",
+        tk.Label(header, text="Entrée  rec/stop     +  menu     −  pause",
                  bg="#1a1a2e", fg="#888888", font=("Helvetica", 8)).pack()
 
         # Statut
@@ -553,12 +558,23 @@ class OverlayApp:
     #  Hotkeys globaux                                                   #
     # ---------------------------------------------------------------- #
 
+    def _toggle_record(self):
+        """Lance ou arrête l'enregistrement directement (touche Entrée)."""
+        if self._state == self.REP:
+            return
+        if self._state == self.IDLE:
+            self.start_record()
+        else:
+            self.stop_record()
+
     def _start_hotkeys(self):
         def on_press(key):
             if _is_toggle(key):
                 self.root.after(0, self._toggle_overlay)
             elif _is_pause_key(key):
                 self.root.after(0, self._toggle_pause)
+            elif _is_enter_key(key):
+                self.root.after(0, self._toggle_record)
 
         self._hk = keyboard.Listener(on_press=on_press, suppress=False)
         self._hk.daemon = True
