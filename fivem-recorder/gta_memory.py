@@ -68,9 +68,17 @@ class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
 #  Noms de processus — détection partielle pour FiveM                  #
 # ------------------------------------------------------------------ #
 
-# FiveM lance GTA V sous un processus dont le nom contient "GTAProcess"
-# Ex : FiveM_b3095_GTAProcess.exe, FiveM_b2699_GTAProcess.exe ...
-GTA_PARTIAL_NAMES = ['GTAProcess', 'GTA5.exe']
+# FiveM lance GTA V sous différents noms selon le build.
+# On teste plusieurs patterns, du plus spécifique au plus large.
+GTA_PARTIAL_NAMES = [
+    'GTAProcess',   # FiveM_b3095_GTAProcess.exe, FiveM_b2699_GTAProcess.exe
+    'GTA5.exe',     # GTA V standalone
+    'GTA5',         # variante sans extension
+    'FiveM_b',      # certains builds plus récents
+]
+
+# Mots-clés pour le diagnostic quand rien n'est trouvé
+_DIAG_KEYWORDS = ['gta', 'fivem', 'citizen', 'rage', 'rockstar']
 
 # ------------------------------------------------------------------ #
 #  Patterns mémoire (sources publiques GTA V modding)                  #
@@ -113,9 +121,18 @@ class GTAMemory:
 
         pid, name = self._find_process()
         if not pid:
+            # Diagnostic : liste les processus GTA/FiveM visibles
+            candidates = self._list_candidates()
+            hint = ''
+            if candidates:
+                hint = ('\n\nProcessus GTA/FiveM detectes sur votre PC :\n'
+                        + '\n'.join(f'  - {n}' for n in candidates[:12])
+                        + '\n\nCopier ces noms et signaler le probleme.')
+            else:
+                hint = '\n\nAucun processus GTA ou FiveM detecte.'
             raise RuntimeError(
-                'FiveM introuvable.\n'
-                'Assurez-vous que FiveM est lancé et qu\'une partie est chargée.')
+                'FiveM introuvable.' + hint + '\n\n'
+                'Verifiez : FiveM est lance ET vous etes dans un serveur (pas le menu).')
 
         # Lecture seule uniquement — évite la détection anti-cheat
         handle = _k32.OpenProcess(
@@ -211,6 +228,20 @@ class GTAMemory:
                 if pattern.lower() in name.lower():
                     return p.info['pid'], name
         return None, None
+
+    @staticmethod
+    def _list_candidates():
+        """Retourne les noms de processus GTA/FiveM détectés (diagnostic)."""
+        seen = []
+        try:
+            for p in psutil.process_iter(['name']):
+                name = p.info.get('name') or ''
+                if any(kw in name.lower() for kw in _DIAG_KEYWORDS):
+                    if name not in seen:
+                        seen.append(name)
+        except Exception:
+            pass
+        return seen
 
     def _module_base(self, module_name):
         snap = _k32.CreateToolhelp32Snapshot(
