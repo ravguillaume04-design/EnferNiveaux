@@ -396,9 +396,10 @@ class BotWindow:
         self._conn_label = tk.Label(row, textvariable=self._status_var,
                                      fg='red', font=('Helvetica', 9))
         self._conn_label.pack(side='left')
-        tk.Button(row, text='Connecter', command=self._connect,
-                  relief='flat', bg='#2c3e50', fg='white',
-                  padx=6, pady=2).pack(side='right')
+        self._conn_btn = tk.Button(row, text='Connecter', command=self._connect,
+                                    relief='flat', bg='#2c3e50', fg='white',
+                                    padx=6, pady=2)
+        self._conn_btn.pack(side='right')
 
         # Waypoints
         wf = tk.LabelFrame(self._win, text='Waypoints', **P)
@@ -511,20 +512,33 @@ class BotWindow:
     # ---------------------------------------------------------------- #
 
     def _connect(self):
+        """Lance la connexion dans un thread pour ne pas bloquer l'UI."""
+        self._status_var.set('Connexion en cours — scan mémoire...')
+        self._conn_label.config(fg='orange')
+        self._conn_btn.config(state='disabled')
+        threading.Thread(target=self._connect_worker, daemon=True).start()
+
+    def _connect_worker(self):
         try:
             self._mem.connect()
             pos = self._mem.get_position()
             hdg = math.degrees(self._mem.get_heading())
             if pos:
-                self._status_var.set(f'Connecté  ({pos[0]:.0f}, {pos[1]:.0f})  cap {hdg:.0f}°')
-                self._conn_label.config(fg='#1e8449')
+                msg = f'Connecté  ({pos[0]:.0f}, {pos[1]:.0f})  cap {hdg:.0f}°'
+                self._win.after(0, lambda: self._conn_label.config(fg='#1e8449'))
             else:
-                self._status_var.set('Connecté — position illisible')
-                self._conn_label.config(fg='orange')
+                msg = 'Connecté — position illisible (êtes-vous en jeu ?)'
+                self._win.after(0, lambda: self._conn_label.config(fg='orange'))
+            self._win.after(0, lambda m=msg: self._status_var.set(m))
         except RuntimeError as e:
-            self._status_var.set(str(e).split('\n')[0])
-            self._conn_label.config(fg='red')
-            messagebox.showerror('Erreur', str(e), parent=self._win)
+            msg = str(e).split('\n')[0]
+            full = str(e)
+            self._win.after(0, lambda m=msg: self._status_var.set(m))
+            self._win.after(0, lambda: self._conn_label.config(fg='red'))
+            self._win.after(0, lambda t=full: messagebox.showerror(
+                'Erreur de connexion', t, parent=self._win))
+        finally:
+            self._win.after(0, lambda: self._conn_btn.config(state='normal'))
 
     # ---------------------------------------------------------------- #
     #  Waypoints                                                         #
