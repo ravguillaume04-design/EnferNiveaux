@@ -1,6 +1,6 @@
 """
-Bot de farming automatique pour GTA V / FiveM.
-Navigation à pied par contrôle clavier avec détection d'obstacles.
+Bot de farming automatique pour GTA V / FiveM — clavier AZERTY (ZQSD).
+Navigation à pied avec détection d'obstacles et glisser-déposer configurable.
 """
 import math
 import time
@@ -8,25 +8,27 @@ import json
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from pynput import keyboard as kb
+from pynput import keyboard as kb, mouse as ms
 
 from gta_memory import GTAMemory
 
-SAVE_HOTKEY_VK = 96   # Numpad 0 — enregistre la position courante
+# Numpad hotkeys
+HK_ADD_WP  = 96   # Numpad 0 — ajouter waypoint
+HK_DRAG_SRC = 97  # Numpad 1 — enregistrer position source du glisser
+HK_DRAG_DST = 98  # Numpad 2 — enregistrer position destination du glisser
 
 # ------------------------------------------------------------------ #
 #  Paramètres de navigation                                            #
 # ------------------------------------------------------------------ #
 
-REACH_DIST    = 2.5    # Mètres — distance pour considérer un WP atteint
-CTRL_HZ       = 20     # Fréquence du boucle de contrôle (Hz)
-CTRL_DT       = 1 / CTRL_HZ
+REACH_DIST   = 2.5    # Mètres pour considérer un WP atteint
+CTRL_HZ      = 20     # Fréquence de la boucle de contrôle
+CTRL_DT      = 1 / CTRL_HZ
+TURN_DEAD    = 0.12   # Radians — zone morte (~7°)
+TURN_SPRINT  = 0.5    # Radians — au-delà : tourne sur place sans avancer
+STUCK_WINDOW = 3.0    # Secondes sans progrès → blocage
+STUCK_MIN_ADV= 0.6    # Mètres minimum de progrès
 
-TURN_DEAD     = 0.12   # Radians — zone morte avant de tourner (~7°)
-TURN_SPRINT   = 0.5    # Radians — au-delà, on tourne sur place sans avancer
-
-STUCK_WINDOW  = 3.0    # Secondes sans progrès → détection de blocage
-STUCK_MIN_ADV = 0.6    # Mètres minimum pour ne pas être "bloqué"
 
 # ------------------------------------------------------------------ #
 #  Waypoint                                                            #
@@ -38,7 +40,8 @@ class Waypoint:
         self.x      = x
         self.y      = y
         self.z      = z
-        self.action = action   # Touche à presser à l'arrivée ('' = rien)
+        # action : '' | 'e' | 'g' | 'k' | 'drag'
+        self.action = action
 
     def distance_2d(self, x, y):
         return math.sqrt((self.x - x) ** 2 + (self.y - y) ** 2)
@@ -52,21 +55,16 @@ class Waypoint:
         return cls(d['name'], d['x'], d['y'], d['z'], d.get('action', ''))
 
     def __str__(self):
-        act = f' → [{self.action}]' if self.action else ''
-        return f'{self.name}  ({self.x:.1f}, {self.y:.1f}){act}'
+        labels = {'e': 'E', 'g': 'G', 'k': 'K', 'drag': 'GLISSER', '': '—'}
+        act = labels.get(self.action, self.action)
+        return f'{self.name}  ({self.x:.1f}, {self.y:.1f})  [{act}]'
 
 
 # ------------------------------------------------------------------ #
-#  Navigator — contrôle clavier avec détection d'obstacles            #
+#  Navigator — ZQSD, cap mémoire, détection obstacles                 #
 # ------------------------------------------------------------------ #
 
 class Navigator:
-    """
-    Pilote le joueur vers un waypoint via les touches WASD.
-    Lit la position et le cap depuis la mémoire GTA V.
-    Détecte les blocages et tente une manœuvre d'évitement.
-    """
-
     def __init__(self, memory: GTAMemory, sprint: bool = False):
         self._mem    = memory
         self._sprint = sprint
@@ -74,10 +72,6 @@ class Navigator:
         self._active = False
 
     def go_to(self, wp: Waypoint, on_info=None) -> bool:
-        """
-        Navigue vers wp. Bloquant jusqu'à l'arrivée ou timeout.
-        Retourne True si atteint, False si abandonné.
-        """
         self._active = True
         result = self._navigate(wp, on_info)
         self._release_all()
@@ -87,14 +81,12 @@ class Navigator:
         self._active = False
 
     # ---------------------------------------------------------------- #
-    #  Boucle principale                                                 #
-    # ---------------------------------------------------------------- #
 
     def _navigate(self, wp: Waypoint, on_info) -> bool:
-        best_dist        = float('inf')
-        stuck_timer      = time.perf_counter()
-        avoidance_count  = 0
-        MAX_AVOIDANCE    = 5
+        best_dist       = float('inf')
+        stuck_timer     = time.perf_counter()
+        avoidance_count = 0
+        MAX_AVOID       = 5
 
         while self._active:
             pos = self._mem.get_position()
@@ -104,133 +96,101 @@ class Navigator:
 
             dist = wp.distance_2d(pos[0], pos[1])
 
-            # Arrivée
             if dist < REACH_DIST:
                 return True
 
-            # Progrès
+            # Progrès ?
             if dist < best_dist - STUCK_MIN_ADV:
                 best_dist   = dist
                 stuck_timer = time.perf_counter()
 
-            # Détection de blocage
+            # Blocage ?
             if time.perf_counter() - stuck_timer > STUCK_WINDOW:
                 avoidance_count += 1
-                if avoidance_count > MAX_AVOIDANCE:
+                if avoidance_count > MAX_AVOID:
                     if on_info:
-                        on_info(f'Blocage persistant — abandon après {MAX_AVOIDANCE} tentatives')
+                        on_info(f'Blocage persistant — waypoint ignoré')
                     return False
                 if on_info:
-                    on_info(f'Obstacle détecté ({avoidance_count}/{MAX_AVOIDANCE}) — manœuvre...')
+                    on_info(f'Obstacle ({avoidance_count}/{MAX_AVOID}) — manœuvre...')
                 self._avoid(wp, pos)
                 stuck_timer = time.perf_counter()
                 best_dist   = float('inf')
                 continue
 
-            # Cap voulu → cible
+            # Cap voulu
             dx = wp.x - pos[0]
             dy = wp.y - pos[1]
-            target_hdg = math.atan2(dx, dy)   # GTA V : Y = Nord
-
-            # Cap actuel depuis la mémoire
+            target_hdg  = math.atan2(dx, dy)
             current_hdg = self._mem.get_heading()
 
-            # Erreur normalisée [-π, π]
             error = target_hdg - current_hdg
             error = (error + math.pi) % (2 * math.pi) - math.pi
 
             self._apply_controls(error)
 
             if on_info:
-                on_info(f'→ {wp.name}  |  distance : {dist:.1f} m  |  erreur cap : {math.degrees(error):.0f}°')
-
+                on_info(
+                    f'→ {wp.name}  |  {dist:.1f} m  |  cap : {math.degrees(error):+.0f}°'
+                )
             time.sleep(CTRL_DT)
 
         return False
 
-    # ---------------------------------------------------------------- #
-    #  Contrôles                                                         #
-    # ---------------------------------------------------------------- #
-
-    def _apply_controls(self, heading_error: float):
-        """Applique WASD selon l'erreur de cap."""
-        # Tourner à gauche / droite
-        if heading_error > TURN_DEAD:
-            self._press('a')
+    def _apply_controls(self, error: float):
+        # Rotation
+        if error > TURN_DEAD:
+            self._press('d')    # droite = sens horaire = augmente le cap
+            self._release('q')
+        elif error < -TURN_DEAD:
+            self._press('q')    # gauche = sens anti-horaire
             self._release('d')
-        elif heading_error < -TURN_DEAD:
-            self._press('d')
-            self._release('a')
         else:
-            self._release('a')
+            self._release('q')
             self._release('d')
 
-        # Avancer seulement si l'erreur de cap est raisonnable
-        if abs(heading_error) < TURN_SPRINT:
+        # Avance seulement si cap acceptable
+        if abs(error) < TURN_SPRINT:
             if self._sprint:
                 self._press(kb.Key.shift)
-            self._press('w')
+            self._press('z')
             self._release('s')
         else:
-            # Trop de déviation → tourne sur place sans avancer
-            self._release('w')
+            self._release('z')
             self._release(kb.Key.shift)
 
-    def _avoid(self, wp: Waypoint, current_pos):
-        """
-        Manœuvre d'évitement réactive :
-        1. Reculer 0.6s
-        2. Tourner de 60° dans la direction de la cible
-        3. Avancer 1.2s
-        """
-        # Calcul du sens de rotation vers la cible
-        dx = wp.x - current_pos[0]
-        dy = wp.y - current_pos[1]
+    def _avoid(self, wp: Waypoint, pos):
+        dx = wp.x - pos[0]
+        dy = wp.y - pos[1]
         target_hdg  = math.atan2(dx, dy)
         current_hdg = self._mem.get_heading()
         error       = (target_hdg - current_hdg + math.pi) % (2 * math.pi) - math.pi
-        turn_key    = 'a' if error > 0 else 'd'
+        turn_key    = 'd' if error > 0 else 'q'
 
         self._release_all()
-
-        # Reculer
-        self._press('s')
-        self._sleep(0.6)
-        self._release('s')
+        self._press('s');  self._sleep(0.6);  self._release('s')
         self._sleep(0.1)
-
-        # Tourner
-        self._press(turn_key)
-        self._sleep(0.7)
-        self._release(turn_key)
+        self._press(turn_key); self._sleep(0.7); self._release(turn_key)
         self._sleep(0.1)
+        self._press('z');  self._sleep(1.2);  self._release('z')
 
-        # Avancer
-        self._press('w')
-        self._sleep(1.2)
-        self._release('w')
-
-    # ---------------------------------------------------------------- #
-    #  Helpers clavier                                                   #
-    # ---------------------------------------------------------------- #
-
-    def _press(self, key):
+    def _press(self, k):
         try:
-            self._kb.press(key)
+            self._kb.press(k)
         except Exception:
             pass
 
-    def _release(self, key):
+    def _release(self, k):
         try:
-            self._kb.release(key)
+            self._kb.release(k)
         except Exception:
             pass
 
     def _release_all(self):
-        for k in ('w', 'a', 's', 'd', kb.Key.shift):
+        for k in ('z', 'q', 's', 'd', kb.Key.shift):
             self._release(k)
 
-    def _sleep(self, seconds: float):
+    def _sleep(self, seconds):
         end = time.perf_counter() + seconds
         while self._active and time.perf_counter() < end:
             time.sleep(0.02)
@@ -242,23 +202,28 @@ class Navigator:
 
 class Bot:
     def __init__(self, memory: GTAMemory):
-        self._mem       = memory
-        self._kb        = kb.Controller()
-        self._nav       = None
-        self._running   = False
-        self._thread    = None
+        self._mem     = memory
+        self._kb      = kb.Controller()
+        self._mouse   = ms.Controller()
+        self._nav     = None
+        self._running = False
+        self._thread  = None
 
     @property
     def is_running(self):
         return self._running
 
     def start(self, waypoints, loop=True, delay=2.0, sprint=False,
+              drag_src=None, drag_dst=None, drag_repeat=1,
               on_status=None, on_done=None):
         if self._running or not waypoints:
             return
-        self._running = True
-        self._nav     = Navigator(self._mem, sprint=sprint)
-        self._thread  = threading.Thread(
+        self._running   = True
+        self._drag_src  = drag_src
+        self._drag_dst  = drag_dst
+        self._drag_rep  = max(1, drag_repeat)
+        self._nav       = Navigator(self._mem, sprint=sprint)
+        self._thread    = threading.Thread(
             target=self._run,
             args=(waypoints, loop, delay, on_status, on_done),
             daemon=True,
@@ -273,8 +238,6 @@ class Bot:
             self._thread.join(timeout=4)
             self._thread = None
 
-    # ---------------------------------------------------------------- #
-
     def _run(self, waypoints, loop, delay, on_status, on_done):
         cycle = 0
         while self._running:
@@ -282,24 +245,18 @@ class Bot:
             for i, wp in enumerate(waypoints):
                 if not self._running:
                     break
-
                 if on_status:
                     on_status(f'Cycle {cycle}  —  {wp.name}  ({i+1}/{len(waypoints)})')
 
                 reached = self._nav.go_to(
                     wp,
-                    on_info=lambda msg: on_status(msg) if on_status else None,
+                    on_info=lambda m: on_status(m) if on_status else None,
                 )
-
                 if not reached or not self._running:
                     break
 
-                # Action à l'arrivée
-                if wp.action:
-                    time.sleep(0.35)
-                    self._press_key(wp.action)
-
-                # Pause entre waypoints
+                time.sleep(0.35)
+                self._execute_action(wp.action, on_status)
                 self._wait(delay, on_status)
 
             if not loop:
@@ -308,7 +265,19 @@ class Bot:
         if on_done:
             on_done()
 
-    def _press_key(self, key: str):
+    # ---------------------------------------------------------------- #
+    #  Actions                                                           #
+    # ---------------------------------------------------------------- #
+
+    def _execute_action(self, action, on_status=None):
+        if not action:
+            return
+        if action == 'drag':
+            self._do_drag(on_status)
+        else:
+            self._tap(action)
+
+    def _tap(self, key: str):
         try:
             k = kb.KeyCode.from_char(key) if len(key) == 1 else kb.Key[key]
             self._kb.press(k)
@@ -317,27 +286,67 @@ class Bot:
         except Exception:
             pass
 
+    def _do_drag(self, on_status=None):
+        """Presse E pour ouvrir le menu puis glisse les items vers l'inventaire."""
+        if not self._drag_src or not self._drag_dst:
+            if on_status:
+                on_status('⚠ Positions de glisser non configurées')
+            return
+
+        # Ouvrir le menu de transformation
+        self._tap('e')
+        time.sleep(1.5)
+
+        for rep in range(self._drag_rep):
+            if not self._running:
+                break
+            if on_status:
+                on_status(f'Glisser {rep+1}/{self._drag_rep}...')
+
+            src = self._drag_src
+            dst = self._drag_dst
+
+            self._mouse.position = src
+            time.sleep(0.2)
+            self._mouse.press(ms.Button.left)
+            time.sleep(0.1)
+
+            # Glisser en douceur
+            steps = 25
+            for i in range(steps + 1):
+                t   = i / steps
+                x   = int(src[0] + (dst[0] - src[0]) * t)
+                y   = int(src[1] + (dst[1] - src[1]) * t)
+                self._mouse.position = (x, y)
+                time.sleep(0.012)
+
+            time.sleep(0.1)
+            self._mouse.release(ms.Button.left)
+            time.sleep(0.4)
+
     def _wait(self, seconds, on_status):
         if seconds <= 0:
             return
         end = time.perf_counter() + seconds
         while self._running and time.perf_counter() < end:
-            remaining = end - time.perf_counter()
+            rem = end - time.perf_counter()
             if on_status:
-                on_status(f'Attente {remaining:.0f}s avant prochain waypoint...')
-            time.sleep(min(remaining, 0.5))
+                on_status(f'Pause : {rem:.0f}s...')
+            time.sleep(min(rem, 0.5))
 
 
 # ================================================================== #
-#  Fenêtre du bot (tkinter Toplevel)                                   #
+#  Fenêtre du bot                                                      #
 # ================================================================== #
 
 class BotWindow:
     def __init__(self, parent: tk.Tk):
-        self._parent = parent
-        self._mem    = GTAMemory()
-        self._bot    = Bot(self._mem)
+        self._parent    = parent
+        self._mem       = GTAMemory()
+        self._bot       = Bot(self._mem)
         self._wps: list[Waypoint] = []
+        self._drag_src  = None
+        self._drag_dst  = None
 
         self._win = tk.Toplevel(parent)
         self._win.title('Bot Farming GTA V')
@@ -350,15 +359,18 @@ class BotWindow:
         except Exception:
             pass
 
-        self._status_var = tk.StringVar(value='Non connecté')
-        self._loop_var   = tk.BooleanVar(value=True)
-        self._sprint_var = tk.BooleanVar(value=False)
-        self._delay_min  = tk.IntVar(value=0)
-        self._delay_sec  = tk.IntVar(value=2)
-        self._action_var = tk.StringVar(value='e')
+        self._status_var  = tk.StringVar(value='Non connecté')
+        self._loop_var    = tk.BooleanVar(value=True)
+        self._sprint_var  = tk.BooleanVar(value=False)
+        self._delay_min   = tk.IntVar(value=0)
+        self._delay_sec   = tk.IntVar(value=2)
+        self._action_var  = tk.StringVar(value='e')
+        self._drag_rep    = tk.IntVar(value=1)
+        self._src_var     = tk.StringVar(value='Non défini')
+        self._dst_var     = tk.StringVar(value='Non défini')
 
         self._build_ui()
-        self._start_hotkey_listener()
+        self._start_hotkeys()
 
     # ---------------------------------------------------------------- #
     #  UI                                                                #
@@ -372,8 +384,9 @@ class BotWindow:
         hdr.pack(fill='x')
         tk.Label(hdr, text='Bot Farming GTA V', bg='#1a1a2e', fg='white',
                  font=('Helvetica', 11, 'bold')).pack()
-        tk.Label(hdr, text='Numpad 0 — sauvegarder position actuelle',
-                 bg='#1a1a2e', fg='#888', font=('Helvetica', 8)).pack()
+        tk.Label(hdr,
+                 text='Num0=WP   Num1=source glisser   Num2=destination glisser',
+                 bg='#1a1a2e', fg='#888', font=('Helvetica', 7)).pack()
 
         # Connexion
         cf = tk.LabelFrame(self._win, text='Connexion GTA V', **P)
@@ -388,38 +401,68 @@ class BotWindow:
                   padx=6, pady=2).pack(side='right')
 
         # Waypoints
-        wf = tk.LabelFrame(self._win, text='Waypoints  (Numpad 0 = ajouter)', **P)
+        wf = tk.LabelFrame(self._win, text='Waypoints', **P)
         wf.pack(fill='x', **P)
-
         lf = tk.Frame(wf)
         lf.pack(fill='x')
         sb = tk.Scrollbar(lf, orient='vertical')
-        self._listbox = tk.Listbox(lf, height=6, width=38,
-                                    yscrollcommand=sb.set,
+        self._listbox = tk.Listbox(lf, height=5, width=40, yscrollcommand=sb.set,
                                     selectmode='single', font=('Courier', 9))
         sb.config(command=self._listbox.yview)
         self._listbox.pack(side='left', fill='x', expand=True)
         sb.pack(side='right', fill='y')
-
         br = tk.Frame(wf)
-        br.pack(fill='x', pady=(4, 0))
-        for text, cmd in [('▲', self._wp_up), ('▼', self._wp_down),
-                          ('✎', self._wp_rename), ('✕', self._wp_delete)]:
-            tk.Button(br, text=text, command=cmd, width=5).pack(side='left', padx=2)
+        br.pack(fill='x', pady=(3, 0))
+        for txt, cmd in [('▲', self._wp_up), ('▼', self._wp_down),
+                         ('✎ Renommer', self._wp_rename), ('✕ Supprimer', self._wp_delete)]:
+            tk.Button(br, text=txt, command=cmd, padx=4).pack(side='left', padx=2)
 
         # Action à l'arrivée
-        af = tk.LabelFrame(self._win, text="Action à l'arrivée (prochain WP)", **P)
+        af = tk.LabelFrame(self._win, text="Action à l'arrivée (prochain WP ajouté)", **P)
         af.pack(fill='x', **P)
+        acts = [
+            ('Aucune',              ''),
+            ('E  (récolter)',       'e'),
+            ('G  (véhicule)',       'g'),
+            ('K  (inventaire)',     'k'),
+            ('Glisser → inventaire','drag'),
+        ]
         ar = tk.Frame(af)
         ar.pack(fill='x')
-        for label, val in [('Aucune', ''), ('E  (récolter/interagir)', 'e'),
-                           ('F  (entrer véhicule)', 'f')]:
-            tk.Radiobutton(ar, text=label, variable=self._action_var,
-                           value=val, font=('Helvetica', 9)).pack(side='left', padx=3)
+        for i, (label, val) in enumerate(acts):
+            tk.Radiobutton(ar, text=label, variable=self._action_var, value=val,
+                           font=('Helvetica', 9)).grid(row=i//3, column=i%3,
+                           sticky='w', padx=4)
 
-        # Fichier waypoints
+        # Config glisser-déposer
+        df = tk.LabelFrame(self._win, text='Configuration du glisser (pour action GLISSER)', **P)
+        df.pack(fill='x', **P)
+
+        for label, var, key_hint in [
+            ('Source (item)  :', self._src_var, 'Num 1 en jeu'),
+            ('Destination    :', self._dst_var, 'Num 2 en jeu'),
+        ]:
+            row = tk.Frame(df)
+            row.pack(fill='x', pady=1)
+            tk.Label(row, text=label, width=16, anchor='w',
+                     font=('Helvetica', 9)).pack(side='left')
+            tk.Label(row, textvariable=var, fg='#1a5276',
+                     font=('Courier', 9)).pack(side='left')
+            tk.Label(row, text=f'  ← {key_hint}', fg='gray',
+                     font=('Helvetica', 8)).pack(side='left')
+
+        rep_row = tk.Frame(df)
+        rep_row.pack(anchor='w', pady=(4, 0))
+        tk.Label(rep_row, text='Répétitions du glisser :', font=('Helvetica', 9)).pack(side='left')
+        tk.Spinbox(rep_row, from_=1, to=20, textvariable=self._drag_rep,
+                   width=3, font=('Helvetica', 9)).pack(side='left', padx=6)
+
+        tk.Button(df, text='Effacer positions', command=self._clear_drag,
+                  font=('Helvetica', 8)).pack(anchor='e', pady=2)
+
+        # Fichier
         fr = tk.Frame(self._win)
-        fr.pack(pady=2)
+        fr.pack(pady=3)
         tk.Button(fr, text='Sauvegarder WPs', width=15,
                   command=self._save_wps).pack(side='left', padx=4)
         tk.Button(fr, text='Charger WPs', width=13,
@@ -428,27 +471,25 @@ class BotWindow:
         ttk.Separator(self._win).pack(fill='x', padx=8, pady=4)
 
         # Paramètres
-        pf = tk.LabelFrame(self._win, text='Paramètres de navigation', **P)
+        pf = tk.LabelFrame(self._win, text='Paramètres', **P)
         pf.pack(fill='x', **P)
-
         dr = tk.Frame(pf)
         dr.pack(anchor='w')
-        tk.Label(dr, text='Pause entre waypoints :', font=('Helvetica', 9)).pack(side='left')
+        tk.Label(dr, text='Pause entre WPs :', font=('Helvetica', 9)).pack(side='left')
         tk.Spinbox(dr, from_=0, to=59, textvariable=self._delay_min,
                    width=3, font=('Helvetica', 9)).pack(side='left', padx=(4, 0))
         tk.Label(dr, text='min', font=('Helvetica', 9)).pack(side='left', padx=(2, 6))
         tk.Spinbox(dr, from_=0, to=59, textvariable=self._delay_sec,
                    width=3, font=('Helvetica', 9)).pack(side='left')
         tk.Label(dr, text='sec', font=('Helvetica', 9)).pack(side='left', padx=(2, 0))
-
         opts = tk.Frame(pf)
         opts.pack(anchor='w', pady=(4, 0))
-        tk.Checkbutton(opts, text='Sprint (Shift)',
-                       variable=self._sprint_var, font=('Helvetica', 9)).pack(side='left')
-        tk.Checkbutton(opts, text='Boucle infinie',
-                       variable=self._loop_var, font=('Helvetica', 9)).pack(side='left', padx=10)
+        tk.Checkbutton(opts, text='Sprint (Shift)', variable=self._sprint_var,
+                       font=('Helvetica', 9)).pack(side='left')
+        tk.Checkbutton(opts, text='Boucle infinie', variable=self._loop_var,
+                       font=('Helvetica', 9)).pack(side='left', padx=10)
 
-        # Contrôles bot
+        # Démarrer / Arrêter
         cr = tk.Frame(self._win)
         cr.pack(pady=8)
         self._start_btn = tk.Button(cr, text='▶  Démarrer', width=14,
@@ -462,7 +503,7 @@ class BotWindow:
         self._stop_btn.pack(side='left', padx=4)
 
         self._info_label = tk.Label(self._win, text='', fg='#1a5276',
-                                     font=('Helvetica', 9), wraplength=320)
+                                     font=('Helvetica', 9), wraplength=340)
         self._info_label.pack(pady=(0, 6))
 
     # ---------------------------------------------------------------- #
@@ -475,108 +516,112 @@ class BotWindow:
             pos = self._mem.get_position()
             hdg = math.degrees(self._mem.get_heading())
             if pos:
-                self._status_var.set(
-                    f'Connecté  •  ({pos[0]:.0f}, {pos[1]:.0f})  cap {hdg:.0f}°')
+                self._status_var.set(f'Connecté  ({pos[0]:.0f}, {pos[1]:.0f})  cap {hdg:.0f}°')
                 self._conn_label.config(fg='#1e8449')
             else:
-                self._status_var.set('Connecté  •  position illisible')
+                self._status_var.set('Connecté — position illisible')
                 self._conn_label.config(fg='orange')
         except RuntimeError as e:
             self._status_var.set(str(e).split('\n')[0])
             self._conn_label.config(fg='red')
-            messagebox.showerror('Erreur de connexion', str(e), parent=self._win)
+            messagebox.showerror('Erreur', str(e), parent=self._win)
 
     # ---------------------------------------------------------------- #
     #  Waypoints                                                         #
     # ---------------------------------------------------------------- #
 
-    def _add_waypoint_from_memory(self):
+    def _add_wp(self):
         if not self._mem.connected:
             return
         pos = self._mem.get_position()
         if not pos:
             return
-        name   = f'WP {len(self._wps) + 1}'
-        action = self._action_var.get()
-        wp     = Waypoint(name, pos[0], pos[1], pos[2], action)
+        wp = Waypoint(f'WP {len(self._wps)+1}', pos[0], pos[1], pos[2],
+                      self._action_var.get())
         self._wps.append(wp)
         self._refresh_list()
-        self._status_var.set(
-            f'Connecté  •  WP ajouté : ({pos[0]:.1f}, {pos[1]:.1f})')
+        self._status_var.set(f'WP ajouté : {wp.name}  ({pos[0]:.1f}, {pos[1]:.1f})')
 
     def _refresh_list(self):
         self._listbox.delete(0, tk.END)
         for wp in self._wps:
             self._listbox.insert(tk.END, str(wp))
 
-    def _selected_idx(self):
-        sel = self._listbox.curselection()
-        return sel[0] if sel else None
+    def _sel(self):
+        s = self._listbox.curselection()
+        return s[0] if s else None
 
     def _wp_up(self):
-        i = self._selected_idx()
+        i = self._sel()
         if i is None or i == 0:
             return
         self._wps[i-1], self._wps[i] = self._wps[i], self._wps[i-1]
-        self._refresh_list()
-        self._listbox.select_set(i-1)
+        self._refresh_list(); self._listbox.select_set(i-1)
 
     def _wp_down(self):
-        i = self._selected_idx()
-        if i is None or i >= len(self._wps) - 1:
+        i = self._sel()
+        if i is None or i >= len(self._wps)-1:
             return
         self._wps[i], self._wps[i+1] = self._wps[i+1], self._wps[i]
-        self._refresh_list()
-        self._listbox.select_set(i+1)
+        self._refresh_list(); self._listbox.select_set(i+1)
 
     def _wp_rename(self):
-        i = self._selected_idx()
+        i = self._sel()
         if i is None:
             return
-        win = tk.Toplevel(self._win)
-        win.title('Renommer')
-        win.attributes('-topmost', True)
-        tk.Label(win, text='Nouveau nom :').pack(padx=10, pady=(10, 2))
-        var = tk.StringVar(value=self._wps[i].name)
-        entry = tk.Entry(win, textvariable=var, width=20)
-        entry.pack(padx=10)
-        entry.focus()
-        def confirm():
-            self._wps[i].name = var.get()
-            self._refresh_list()
-            win.destroy()
-        tk.Button(win, text='OK', command=confirm).pack(pady=8)
-        win.bind('<Return>', lambda _: confirm())
+        w = tk.Toplevel(self._win)
+        w.title('Renommer'); w.attributes('-topmost', True)
+        tk.Label(w, text='Nouveau nom :').pack(padx=10, pady=(10, 2))
+        v = tk.StringVar(value=self._wps[i].name)
+        e = tk.Entry(w, textvariable=v, width=20); e.pack(padx=10); e.focus()
+        def ok():
+            self._wps[i].name = v.get(); self._refresh_list(); w.destroy()
+        tk.Button(w, text='OK', command=ok).pack(pady=8)
+        w.bind('<Return>', lambda _: ok())
 
     def _wp_delete(self):
-        i = self._selected_idx()
-        if i is None:
-            return
-        self._wps.pop(i)
-        self._refresh_list()
+        i = self._sel()
+        if i is not None:
+            self._wps.pop(i); self._refresh_list()
 
     def _save_wps(self):
         if not self._wps:
             return
-        path = filedialog.asksaveasfilename(
-            defaultextension='.json',
-            filetypes=[('JSON', '*.json')],
-            parent=self._win,
-        )
+        path = filedialog.asksaveasfilename(defaultextension='.json',
+                                             filetypes=[('JSON','*.json')],
+                                             parent=self._win)
         if path:
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump([wp.to_dict() for wp in self._wps], f, indent=2)
 
     def _load_wps(self):
-        path = filedialog.askopenfilename(
-            filetypes=[('JSON', '*.json')],
-            parent=self._win,
-        )
+        path = filedialog.askopenfilename(filetypes=[('JSON','*.json')], parent=self._win)
         if path:
             with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            self._wps = [Waypoint.from_dict(d) for d in data]
+                self._wps = [Waypoint.from_dict(d) for d in json.load(f)]
             self._refresh_list()
+
+    # ---------------------------------------------------------------- #
+    #  Glisser-déposer                                                   #
+    # ---------------------------------------------------------------- #
+
+    def _record_drag_src(self):
+        mouse_ctrl = ms.Controller()
+        pos = mouse_ctrl.position
+        self._drag_src = pos
+        self._src_var.set(f'{pos[0]}, {pos[1]}')
+
+    def _record_drag_dst(self):
+        mouse_ctrl = ms.Controller()
+        pos = mouse_ctrl.position
+        self._drag_dst = pos
+        self._dst_var.set(f'{pos[0]}, {pos[1]}')
+
+    def _clear_drag(self):
+        self._drag_src = None
+        self._drag_dst = None
+        self._src_var.set('Non défini')
+        self._dst_var.set('Non défini')
 
     # ---------------------------------------------------------------- #
     #  Bot                                                               #
@@ -584,50 +629,59 @@ class BotWindow:
 
     def _start_bot(self):
         if not self._mem.connected:
-            messagebox.showwarning('Non connecté',
-                                   'Connectez-vous à GTA V d\'abord.', parent=self._win)
+            messagebox.showwarning('Non connecté', 'Connectez-vous d\'abord.', parent=self._win)
             return
         if not self._wps:
-            messagebox.showwarning('Aucun waypoint',
-                                   'Ajoutez au moins un waypoint.', parent=self._win)
+            messagebox.showwarning('Aucun waypoint', 'Ajoutez au moins un waypoint.', parent=self._win)
+            return
+        has_drag = any(wp.action == 'drag' for wp in self._wps)
+        if has_drag and (not self._drag_src or not self._drag_dst):
+            messagebox.showwarning('Glisser non configuré',
+                                   'Configurez la source (Num 1) et la destination (Num 2) du glisser.',
+                                   parent=self._win)
             return
 
         delay = self._delay_min.get() * 60 + self._delay_sec.get()
         self._start_btn.config(state='disabled')
         self._stop_btn.config(state='normal')
 
-        def on_status(msg):
-            self._win.after(0, lambda m=msg: self._info_label.config(text=m))
-
-        def on_done():
-            self._win.after(0, self._on_bot_done)
+        def on_status(m):
+            self._win.after(0, lambda msg=m: self._info_label.config(text=msg))
 
         self._bot.start(
             self._wps,
             loop=self._loop_var.get(),
             delay=delay,
             sprint=self._sprint_var.get(),
+            drag_src=self._drag_src,
+            drag_dst=self._drag_dst,
+            drag_repeat=self._drag_rep.get(),
             on_status=on_status,
-            on_done=on_done,
+            on_done=lambda: self._win.after(0, self._on_done),
         )
 
     def _stop_bot(self):
-        self._bot.stop()
-        self._on_bot_done()
+        self._bot.stop(); self._on_done()
 
-    def _on_bot_done(self):
+    def _on_done(self):
         self._start_btn.config(state='normal')
         self._stop_btn.config(state='disabled')
         self._info_label.config(text='Arrêté')
 
     # ---------------------------------------------------------------- #
-    #  Hotkey Numpad 0                                                   #
+    #  Hotkeys globaux (Numpad 0/1/2)                                    #
     # ---------------------------------------------------------------- #
 
-    def _start_hotkey_listener(self):
+    def _start_hotkeys(self):
         def on_press(key):
-            if getattr(key, 'vk', None) == SAVE_HOTKEY_VK:
-                self._win.after(0, self._add_waypoint_from_memory)
+            vk = getattr(key, 'vk', None)
+            if vk == HK_ADD_WP:
+                self._win.after(0, self._add_wp)
+            elif vk == HK_DRAG_SRC:
+                self._win.after(0, self._record_drag_src)
+            elif vk == HK_DRAG_DST:
+                self._win.after(0, self._record_drag_dst)
+
         self._hk = kb.Listener(on_press=on_press, suppress=False)
         self._hk.daemon = True
         self._hk.start()
